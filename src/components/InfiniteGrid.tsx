@@ -5,10 +5,12 @@ import type { User } from "@supabase/supabase-js";
 import GridCell from "./GridCell";
 import AddCellModal from "./AddCellModal";
 import ViewCellModal from "./ViewCellModal";
+import Joystick from "./Joystick";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { BUFFER, CELL_SIZE, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
+import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
+import { BUFFER, CELL_SIZE, JOYSTICK_MAX_SPEED, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
 import { fetchCellAt, type CellRow } from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
@@ -18,6 +20,7 @@ const MAX_FRAME_DELTA = 48; // ms, guards against tab-switch stalls
 export default function InfiniteGrid({ initialUser }: { initialUser: User | null }) {
   const user = useUser(initialUser);
   const isAdmin = useIsAdmin(user);
+  const isTouchPrimary = useIsTouchPrimary();
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -30,6 +33,13 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const velocity = useRef({ x: 0, y: 0 });
   const rafId = useRef<number | null>(null);
   const lastFrameTime = useRef<number | null>(null);
+
+  // Joystick input (mobile only) — a normalized -1..1 direction vector,
+  // driven directly at JOYSTICK_MAX_SPEED while held. Releasing it just
+  // stops feeding new velocity in; the existing friction-decay loop below
+  // takes over from there for a smooth coast to a stop.
+  const joystickVector = useRef({ x: 0, y: 0 });
+  const joystickActive = useRef(false);
 
   // The visual position is tracked in a ref and painted straight to the DOM
   // (no React render) so finger tracking is instant. `translate` (state) is
@@ -82,14 +92,23 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       lastFrameTime.current = ts;
       const ticks = dt / 16.67;
 
-      let vx = velocity.current.x;
-      let vy = velocity.current.y;
-      const decay = Math.pow(FRICTION, ticks);
-      vx *= decay;
-      vy *= decay;
+      let vx: number;
+      let vy: number;
+      if (joystickActive.current) {
+        vx = joystickVector.current.x * JOYSTICK_MAX_SPEED;
+        vy = joystickVector.current.y * JOYSTICK_MAX_SPEED;
+      } else {
+        const decay = Math.pow(FRICTION, ticks);
+        vx = velocity.current.x * decay;
+        vy = velocity.current.y * decay;
+      }
       velocity.current = { x: vx, y: vy };
 
-      if (Math.abs(vx) < VELOCITY_STOP_THRESHOLD && Math.abs(vy) < VELOCITY_STOP_THRESHOLD) {
+      if (
+        !joystickActive.current &&
+        Math.abs(vx) < VELOCITY_STOP_THRESHOLD &&
+        Math.abs(vy) < VELOCITY_STOP_THRESHOLD
+      ) {
         rafId.current = null;
         lastFrameTime.current = null;
         return;
@@ -190,6 +209,16 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, getCell, version]);
 
+  const handleJoystickVector = useCallback(
+    (dx: number, dy: number) => {
+      joystickVector.current = { x: dx, y: dy };
+      const active = dx !== 0 || dy !== 0;
+      joystickActive.current = active;
+      if (active) runPhysics();
+    },
+    [runPhysics]
+  );
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     stopAnimation();
     velocity.current = { x: 0, y: 0 };
@@ -225,6 +254,11 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       Math.hypot(e.clientX - dragState.current.startX, e.clientY - dragState.current.startY)
     );
 
+    // Swipe-to-pan is mobile-only disabled — panning there happens via the
+    // joystick instead (direct touch-drag caused sluggish, GC-heavy
+    // rendering on phones). Tap-to-open below still works on touch.
+    if (isTouchPrimary) return;
+
     commitTranslate({
       x: dragState.current.originX + (e.clientX - dragState.current.startX),
       y: dragState.current.originY + (e.clientY - dragState.current.startY),
@@ -242,7 +276,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / STEP);
         setPendingCell({ x: cellX, y: cellY });
       }
-    } else {
+    } else if (!isTouchPrimary) {
       runPhysics();
     }
   };
@@ -250,7 +284,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const onPointerLeave = () => {
     if (!isDragging) return;
     setIsDragging(false);
-    runPhysics();
+    if (!isTouchPrimary) runPhysics();
   };
 
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -289,6 +323,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           ))}
         </div>
       </div>
+
+      {isTouchPrimary && <Joystick onVector={handleJoystickVector} />}
 
       {pendingCell && (() => {
         const existing = getCell(pendingCell.x, pendingCell.y);
