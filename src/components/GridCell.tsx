@@ -1,8 +1,9 @@
+import { memo } from "react";
 import Image from "next/image";
 import { CELL_SIZE, STEP } from "@/lib/gridConstants";
 import { getPublicImageUrl, type CellRow } from "@/lib/cells";
 
-export default function GridCell({
+function GridCell({
   x,
   y,
   cell,
@@ -69,3 +70,5 @@ export default function GridCell({
     </div>
   );
 }
+
+export default memo(GridCell);

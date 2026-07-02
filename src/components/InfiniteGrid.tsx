@@ -144,14 +144,33 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const range = useMemo(() => {
-    if (viewport.width === 0 && viewport.height === 0) return null;
-    return {
-      minX: Math.floor(-translate.x / STEP) - BUFFER,
-      maxX: Math.ceil((-translate.x + viewport.width) / STEP) + BUFFER,
-      minY: Math.floor(-translate.y / STEP) - BUFFER,
-      maxY: Math.ceil((-translate.y + viewport.height) / STEP) + BUFFER,
-    };
+  // Only produces a NEW range object when the visible cell window actually
+  // shifts (roughly once per STEP px of movement) rather than on every
+  // translate sync (~60/sec while dragging). Returning the same object
+  // reference from a state updater makes React skip the re-render entirely,
+  // which avoids reallocating + re-rendering every visible tile every frame.
+  const [range, setRange] = useState<{
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (viewport.width === 0 && viewport.height === 0) return;
+    const minX = Math.floor(-translate.x / STEP) - BUFFER;
+    const maxX = Math.ceil((-translate.x + viewport.width) / STEP) + BUFFER;
+    const minY = Math.floor(-translate.y / STEP) - BUFFER;
+    const maxY = Math.ceil((-translate.y + viewport.height) / STEP) + BUFFER;
+    setRange((prev) =>
+      prev &&
+      prev.minX === minX &&
+      prev.maxX === maxX &&
+      prev.minY === minY &&
+      prev.maxY === maxY
+        ? prev
+        : { minX, maxX, minY, maxY }
+    );
   }, [translate, viewport]);
 
   useEffect(() => {
