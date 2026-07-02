@@ -1,0 +1,212 @@
+"use client";
+
+import { useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { CellTakenError, insertImageCell, insertTextCell, type CellRow } from "@/lib/cells";
+import { resizeImage } from "@/lib/resizeImage";
+import SignInPanel from "./SignInPanel";
+
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_TEXT_LENGTH = 280;
+
+export default function AddCellModal({
+  x,
+  y,
+  user,
+  onClose,
+  onCreated,
+}: {
+  x: number;
+  y: number;
+  user: User | null;
+  onClose: () => void;
+  onCreated: (cell: CellRow) => void;
+}) {
+  const [tab, setTab] = useState<"image" | "text">("image");
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [taken, setTaken] = useState(false);
+
+  const pickFile = (f: File | null) => {
+    setError(null);
+    if (!f) {
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    if (!ALLOWED_TYPES.has(f.type)) {
+      setError("Unsupported file type.");
+      return;
+    }
+    if (f.size > MAX_FILE_SIZE) {
+      setError("File is too large (max 20MB).");
+      return;
+    }
+    setFile(f);
+    setPreviewUrl(URL.createObjectURL(f));
+  };
+
+  const submitImage = async () => {
+    if (!file || !user) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { blob, width, height } = await resizeImage(file);
+      const cell = await insertImageCell(x, y, blob, width, height, user.id);
+      onCreated(cell);
+      onClose();
+    } catch (err) {
+      if (err instanceof CellTakenError) {
+        setTaken(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitText = async () => {
+    if (!text.trim() || !user) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const cell = await insertTextCell(x, y, text.trim(), user.id);
+      onCreated(cell);
+      onClose();
+    } catch (err) {
+      if (err instanceof CellTakenError) {
+        setTaken(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-black/50 dark:text-white/50">
+            Add to this cell
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-black/40 dark:text-white/40 hover:opacity-70"
+          >
+            ×
+          </button>
+        </div>
+
+        {taken ? (
+          <p className="text-sm text-black/70 dark:text-white/70">
+            Someone just filled this cell — reload to see what they added.
+          </p>
+        ) : !user ? (
+          <SignInPanel title="Sign in to add something here" />
+        ) : (
+          <>
+            <div className="flex rounded-lg bg-black/5 dark:bg-white/5 p-1 text-sm font-medium">
+              <button
+                type="button"
+                onClick={() => setTab("image")}
+                className={`flex-1 rounded-md py-1.5 transition-colors ${
+                  tab === "image" ? "bg-background shadow-sm" : "opacity-60"
+                }`}
+              >
+                Upload Image
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("text")}
+                className={`flex-1 rounded-md py-1.5 transition-colors ${
+                  tab === "text" ? "bg-background shadow-sm" : "opacity-60"
+                }`}
+              >
+                Write Text
+              </button>
+            </div>
+
+            {tab === "image" ? (
+              <div className="flex flex-col gap-3">
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt=""
+                    className="w-full aspect-square object-cover rounded-lg"
+                  />
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors">
+                    <span className="text-sm text-black/50 dark:text-white/50">
+                      Click to choose an image
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                )}
+                {error && <p className="text-sm text-red-500">{error}</p>}
+                <button
+                  type="button"
+                  onClick={submitImage}
+                  disabled={!file || busy}
+                  className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
+                >
+                  {busy ? "Uploading…" : "Add image"}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT_LENGTH))}
+                  placeholder="Write something…"
+                  rows={4}
+                  className="w-full resize-none rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-black/40 dark:text-white/40">
+                    {text.length}/{MAX_TEXT_LENGTH}
+                  </span>
+                </div>
+                {error && <p className="text-sm text-red-500">{error}</p>}
+                <button
+                  type="button"
+                  onClick={submitText}
+                  disabled={!text.trim() || busy}
+                  className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
+                >
+                  {busy ? "Saving…" : "Add text"}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
