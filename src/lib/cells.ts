@@ -88,9 +88,12 @@ async function insertCell(row: {
   return data as CellRow;
 }
 
+// Public storage URLs are deterministic — build the string directly rather
+// than spinning up a full Supabase client (auth/storage/realtime setup) on
+// every call. This runs once per image cell on every render, so avoiding
+// that overhead matters a lot on slower mobile CPUs.
 export function getPublicImageUrl(imagePath: string): string {
-  const supabase = createClient();
-  return supabase.storage.from(BUCKET).getPublicUrl(imagePath).data.publicUrl;
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${imagePath}`;
 }
 
 export async function insertTextCell(
