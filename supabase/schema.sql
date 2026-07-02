@@ -81,3 +81,34 @@ create policy "cells_images_admin_delete"
       select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')
     )
   );
+
+-- v1.2: normal (non-admin) users may upload at most 5 images per UTC
+-- calendar day. Admins are exempt. Enforced in the insert policy itself
+-- (not just client-side) so it can't be bypassed by calling the API
+-- directly.
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')
+  );
+$$;
+
+alter policy "cells_insert_authenticated"
+  on public.cells
+  with check (
+    auth.uid() = created_by
+    and (
+      cell_type <> 'image'
+      or public.is_admin()
+      or (
+        select count(*) from public.cells c
+        where c.created_by = auth.uid()
+          and c.cell_type = 'image'
+          and c.created_at >= date_trunc('day', now())
+      ) < 5
+    )
+  );

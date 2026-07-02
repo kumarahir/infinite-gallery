@@ -340,6 +340,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             x={pendingCell.x}
             y={pendingCell.y}
             user={user}
+            isAdmin={isAdmin}
             onClose={() => setPendingCell(null)}
             onCreated={addLocalCell}
           />

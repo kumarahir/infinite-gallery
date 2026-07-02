@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { CellTakenError, insertImageCell, insertTextCell, type CellRow } from "@/lib/cells";
+import {
+  CellTakenError,
+  DailyLimitError,
+  fetchTodayImageUploadCount,
+  insertImageCell,
+  insertTextCell,
+  type CellRow,
+} from "@/lib/cells";
 import { resizeImage } from "@/lib/resizeImage";
 import SignInPanel from "./SignInPanel";
 
@@ -15,17 +22,21 @@ const ALLOWED_TYPES = new Set([
 ]);
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 280;
+const DAILY_IMAGE_LIMIT = 5;
+const DAILY_LIMIT_MESSAGE = `You've reached today's limit of ${DAILY_IMAGE_LIMIT} image uploads. Try again tomorrow.`;
 
 export default function AddCellModal({
   x,
   y,
   user,
+  isAdmin,
   onClose,
   onCreated,
 }: {
   x: number;
   y: number;
   user: User | null;
+  isAdmin: boolean;
   onClose: () => void;
   onCreated: (cell: CellRow) => void;
 }) {
@@ -36,6 +47,17 @@ export default function AddCellModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
+
+  useEffect(() => {
+    if (!user || isAdmin) return;
+    fetchTodayImageUploadCount(user.id)
+      .then((count) => setLimitReached(count >= DAILY_IMAGE_LIMIT))
+      .catch(() => {
+        // If the check itself fails, let the (server-enforced) insert
+        // attempt decide — don't block the user on a transient error.
+      });
+  }, [user, isAdmin]);
 
   const pickFile = (f: File | null) => {
     setError(null);
@@ -61,6 +83,14 @@ export default function AddCellModal({
     setBusy(true);
     setError(null);
     try {
+      if (!isAdmin) {
+        const count = await fetchTodayImageUploadCount(user.id);
+        if (count >= DAILY_IMAGE_LIMIT) {
+          setLimitReached(true);
+          setBusy(false);
+          return;
+        }
+      }
       const { blob, width, height } = await resizeImage(file);
       const cell = await insertImageCell(x, y, blob, width, height, user.id);
       onCreated(cell);
@@ -68,6 +98,8 @@ export default function AddCellModal({
     } catch (err) {
       if (err instanceof CellTakenError) {
         setTaken(true);
+      } else if (err instanceof DailyLimitError) {
+        setLimitReached(true);
       } else {
         setError(err instanceof Error ? err.message : "Something went wrong.");
       }
@@ -148,37 +180,43 @@ export default function AddCellModal({
             </div>
 
             {tab === "image" ? (
-              <div className="flex flex-col gap-3">
-                {previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewUrl}
-                    alt=""
-                    className="w-full aspect-square object-cover rounded-lg"
-                  />
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors">
-                    <span className="text-sm text-black/50 dark:text-white/50">
-                      Click to choose an image
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+              limitReached ? (
+                <p className="text-sm text-black/70 dark:text-white/70 py-4">
+                  {DAILY_LIMIT_MESSAGE}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {previewUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={previewUrl}
+                      alt=""
+                      className="w-full aspect-square object-cover rounded-lg"
                     />
-                  </label>
-                )}
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <button
-                  type="button"
-                  onClick={submitImage}
-                  disabled={!file || busy}
-                  className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
-                >
-                  {busy ? "Uploading…" : "Add image"}
-                </button>
-              </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors">
+                      <span className="text-sm text-black/50 dark:text-white/50">
+                        Click to choose an image
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  )}
+                  {error && <p className="text-sm text-red-500">{error}</p>}
+                  <button
+                    type="button"
+                    onClick={submitImage}
+                    disabled={!file || busy}
+                    className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
+                  >
+                    {busy ? "Uploading…" : "Add image"}
+                  </button>
+                </div>
+              )
             ) : (
               <div className="flex flex-col gap-3">
                 <textarea

@@ -64,6 +64,35 @@ export class CellTakenError extends Error {
   }
 }
 
+export class DailyLimitError extends Error {
+  constructor() {
+    super("Daily image upload limit reached.");
+    this.name = "DailyLimitError";
+  }
+}
+
+// Non-admins may upload at most 5 images per UTC calendar day — this is
+// also enforced in the `cells_insert_authenticated` RLS policy (the real
+// guarantee, since it can't be bypassed), but checking here first avoids
+// uploading a file to storage just to have the row insert rejected.
+export async function fetchTodayImageUploadCount(userId: string): Promise<number> {
+  const supabase = createClient();
+  const now = new Date();
+  const startOfDay = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  ).toISOString();
+
+  const { count, error } = await supabase
+    .from("cells")
+    .select("id", { count: "exact", head: true })
+    .eq("created_by", userId)
+    .eq("cell_type", "image")
+    .gte("created_at", startOfDay);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 async function insertCell(row: {
   x: number;
   y: number;
@@ -83,6 +112,7 @@ async function insertCell(row: {
 
   if (error) {
     if (error.code === "23505") throw new CellTakenError();
+    if (error.code === "42501") throw new DailyLimitError();
     throw error;
   }
   return data as CellRow;
@@ -128,13 +158,20 @@ export async function insertImageCell(
 
   if (uploadError) throw uploadError;
 
-  return insertCell({
-    x,
-    y,
-    cell_type: "image",
-    image_path: path,
-    image_width: width,
-    image_height: height,
-    created_by: userId,
-  });
+  try {
+    return await insertCell({
+      x,
+      y,
+      cell_type: "image",
+      image_path: path,
+      image_width: width,
+      image_height: height,
+      created_by: userId,
+    });
+  } catch (err) {
+    // Row insert failed (e.g. daily limit, or someone else just took this
+    // cell) — clean up the file we just uploaded so it doesn't linger.
+    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    throw err;
+  }
 }
