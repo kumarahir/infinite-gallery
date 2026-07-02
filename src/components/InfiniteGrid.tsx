@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import GridCell from "./GridCell";
 import AddCellModal from "./AddCellModal";
+import ViewCellModal from "./ViewCellModal";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
-import { BUFFER, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
-import type { CellRow } from "@/lib/cells";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { BUFFER, CELL_SIZE, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
+import { fetchCellAt, type CellRow } from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -15,7 +17,9 @@ const MAX_FRAME_DELTA = 48; // ms, guards against tab-switch stalls
 
 export default function InfiniteGrid({ initialUser }: { initialUser: User | null }) {
   const user = useUser(initialUser);
+  const isAdmin = useIsAdmin(user);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -27,7 +31,39 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const rafId = useRef<number | null>(null);
   const lastFrameTime = useRef<number | null>(null);
 
-  const { ensureRange, getCell, addLocalCell, version } = useCellChunks();
+  // The visual position is tracked in a ref and painted straight to the DOM
+  // (no React render) so finger tracking is instant. `translate` (state) is
+  // only synced from this ref once per animation frame — it exists purely
+  // to drive which cells are visible, which doesn't need to update on every
+  // single pointermove (mobile can fire dozens of those between frames).
+  const translateRef = useRef({ x: 0, y: 0 });
+  const syncScheduled = useRef(false);
+
+  const paintTransform = useCallback(() => {
+    if (wrapperRef.current) {
+      wrapperRef.current.style.transform = `translate3d(${translateRef.current.x}px, ${translateRef.current.y}px, 0)`;
+    }
+  }, []);
+
+  const scheduleStateSync = useCallback(() => {
+    if (syncScheduled.current) return;
+    syncScheduled.current = true;
+    requestAnimationFrame(() => {
+      syncScheduled.current = false;
+      setTranslate({ ...translateRef.current });
+    });
+  }, []);
+
+  const commitTranslate = useCallback(
+    (next: { x: number; y: number }) => {
+      translateRef.current = next;
+      paintTransform();
+      scheduleStateSync();
+    },
+    [paintTransform, scheduleStateSync]
+  );
+
+  const { ensureRange, getCell, addLocalCell, removeLocalCell, version } = useCellChunks();
 
   const stopAnimation = useCallback(() => {
     if (rafId.current != null) {
@@ -46,31 +82,27 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       lastFrameTime.current = ts;
       const ticks = dt / 16.67;
 
-      let settled = false;
-      setTranslate((prev) => {
-        let vx = velocity.current.x;
-        let vy = velocity.current.y;
-        const decay = Math.pow(FRICTION, ticks);
-        vx *= decay;
-        vy *= decay;
-        velocity.current = { x: vx, y: vy };
+      let vx = velocity.current.x;
+      let vy = velocity.current.y;
+      const decay = Math.pow(FRICTION, ticks);
+      vx *= decay;
+      vy *= decay;
+      velocity.current = { x: vx, y: vy };
 
-        if (Math.abs(vx) < VELOCITY_STOP_THRESHOLD && Math.abs(vy) < VELOCITY_STOP_THRESHOLD) {
-          settled = true;
-          return prev;
-        }
-        return { x: prev.x + vx * ticks, y: prev.y + vy * ticks };
-      });
-
-      if (settled) {
+      if (Math.abs(vx) < VELOCITY_STOP_THRESHOLD && Math.abs(vy) < VELOCITY_STOP_THRESHOLD) {
         rafId.current = null;
         lastFrameTime.current = null;
         return;
       }
+
+      commitTranslate({
+        x: translateRef.current.x + vx * ticks,
+        y: translateRef.current.y + vy * ticks,
+      });
       rafId.current = requestAnimationFrame(step);
     };
     rafId.current = requestAnimationFrame(step);
-  }, []);
+  }, [commitTranslate]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -86,6 +118,31 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, []);
 
   useEffect(() => stopAnimation, [stopAnimation]);
+
+  // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid on it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("cell");
+    params.delete("cell");
+    const rest = params.toString();
+    window.history.replaceState({}, "", rest ? `?${rest}` : window.location.pathname);
+
+    if (!raw) return;
+    const [xStr, yStr] = raw.split(",");
+    const x = Number(xStr);
+    const y = Number(yStr);
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return;
+
+    fetchCellAt(x, y).then((cell) => {
+      if (cell) addLocalCell(cell);
+      setPendingCell({ x, y });
+      commitTranslate({
+        x: containerRef.current!.clientWidth / 2 - x * STEP - CELL_SIZE / 2,
+        y: containerRef.current!.clientHeight / 2 - y * STEP - CELL_SIZE / 2,
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const range = useMemo(() => {
     if (viewport.width === 0 && viewport.height === 0) return null;
@@ -121,8 +178,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     dragState.current = {
       startX: e.clientX,
       startY: e.clientY,
-      originX: translate.x,
-      originY: translate.y,
+      originX: translateRef.current.x,
+      originY: translateRef.current.y,
       moved: 0,
     };
     lastSample.current = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -149,7 +206,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       Math.hypot(e.clientX - dragState.current.startX, e.clientY - dragState.current.startY)
     );
 
-    setTranslate({
+    commitTranslate({
       x: dragState.current.originX + (e.clientX - dragState.current.startX),
       y: dragState.current.originY + (e.clientY - dragState.current.startY),
     });
@@ -162,11 +219,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     if (dragState.current.moved < TAP_THRESHOLD) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
-        const cellX = Math.floor((e.clientX - rect.left - translate.x) / STEP);
-        const cellY = Math.floor((e.clientY - rect.top - translate.y) / STEP);
-        if (!getCell(cellX, cellY)) {
-          setPendingCell({ x: cellX, y: cellY });
-        }
+        const cellX = Math.floor((e.clientX - rect.left - translateRef.current.x) / STEP);
+        const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / STEP);
+        setPendingCell({ x: cellX, y: cellY });
       }
     } else {
       runPhysics();
@@ -181,7 +236,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
-    setTranslate((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+    commitTranslate({
+      x: translateRef.current.x - e.deltaX,
+      y: translateRef.current.y - e.deltaY,
+    });
     velocity.current = { x: (-e.deltaX / 16.67) * 4, y: (-e.deltaY / 16.67) * 4 };
     runPhysics();
   };
@@ -200,6 +258,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         onWheel={onWheel}
       >
         <div
+          ref={wrapperRef}
           className="absolute top-0 left-0"
           style={{
             transform: `translate3d(${translate.x}px, ${translate.y}px, 0)`,
@@ -212,15 +271,25 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       </div>
 
-      {pendingCell && (
-        <AddCellModal
-          x={pendingCell.x}
-          y={pendingCell.y}
-          user={user}
-          onClose={() => setPendingCell(null)}
-          onCreated={addLocalCell}
-        />
-      )}
+      {pendingCell && (() => {
+        const existing = getCell(pendingCell.x, pendingCell.y);
+        return existing ? (
+          <ViewCellModal
+            cell={existing}
+            isAdmin={isAdmin}
+            onClose={() => setPendingCell(null)}
+            onDeleted={removeLocalCell}
+          />
+        ) : (
+          <AddCellModal
+            x={pendingCell.x}
+            y={pendingCell.y}
+            user={user}
+            onClose={() => setPendingCell(null)}
+            onCreated={addLocalCell}
+          />
+        );
+      })()}
     </>
   );
 }

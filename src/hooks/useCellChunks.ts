@@ -70,5 +70,19 @@ export function useCellChunks() {
     [bump]
   );
 
-  return { ensureRange, getCell, addLocalCell, version };
+  const removeLocalCell = useCallback(
+    (x: number, y: number) => {
+      const key = chunkKey(Math.floor(x / CHUNK_SIZE), Math.floor(y / CHUNK_SIZE));
+      const existing = cache.current.get(key);
+      if (!existing) return;
+      cache.current.set(
+        key,
+        existing.filter((r) => !(r.x === x && r.y === y))
+      );
+      bump();
+    },
+    [bump]
+  );
+
+  return { ensureRange, getCell, addLocalCell, removeLocalCell, version };
 }

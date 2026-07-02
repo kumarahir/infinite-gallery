@@ -50,3 +50,34 @@ create policy "cells_images_authenticated_insert"
     bucket_id = 'cells-images'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- v1.1: admin moderation. Admins are listed in this table (add/remove via
+-- `insert into public.admins (email) values ('you@example.com');` in the
+-- SQL editor — no redeploy needed) and may remove any cell.
+
+create table public.admins (
+  email text primary key
+);
+alter table public.admins enable row level security;
+
+create policy "admins_select_self"
+  on public.admins for select
+  to authenticated
+  using (lower(email) = lower(auth.jwt() ->> 'email'));
+
+create policy "cells_delete_admin"
+  on public.cells for delete
+  to authenticated
+  using (exists (
+    select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')
+  ));
+
+create policy "cells_images_admin_delete"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'cells-images'
+    and exists (
+      select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')
+    )
+  );

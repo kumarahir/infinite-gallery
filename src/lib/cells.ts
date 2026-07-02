@@ -16,6 +16,28 @@ export interface CellRow {
 
 const BUCKET = "cells-images";
 
+export async function fetchCellAt(x: number, y: number): Promise<CellRow | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cells")
+    .select("*")
+    .eq("x", x)
+    .eq("y", y)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as CellRow) ?? null;
+}
+
+export async function deleteCell(cell: CellRow): Promise<void> {
+  const supabase = createClient();
+  if (cell.cell_type === "image" && cell.image_path) {
+    await supabase.storage.from(BUCKET).remove([cell.image_path]);
+  }
+  const { error } = await supabase.from("cells").delete().eq("id", cell.id);
+  if (error) throw error;
+}
+
 export async function fetchCellsInRange(
   minX: number,
   maxX: number,
