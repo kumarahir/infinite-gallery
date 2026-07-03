@@ -88,10 +88,15 @@ export default function ViewCellModal({
           </p>
         )}
 
-        {cell.cell_type === "image" && cell.created_by_name && (
-          <p className="text-xs text-black/50 dark:text-white/50 text-center -mt-2">
-            Uploaded by {cell.created_by_name}
-          </p>
+        {cell.cell_type === "image" && (cell.created_by_name || cell.themes?.name) && (
+          <div className="flex items-center justify-center gap-2 text-xs text-black/50 dark:text-white/50 text-center -mt-2">
+            {cell.created_by_name && <span>Uploaded by {cell.created_by_name}</span>}
+            {cell.themes?.name && (
+              <span className="rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 font-medium">
+                {cell.themes.name}
+              </span>
+            )}
+          </div>
         )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}

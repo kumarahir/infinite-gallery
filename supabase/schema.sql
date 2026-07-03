@@ -126,3 +126,39 @@ alter table public.cells add column created_by_name text default (
     split_part(auth.jwt() ->> 'email', '@', 1)
   )
 );
+
+-- v1.4: image themes. Pre-populated list users pick from when uploading;
+-- admins manage the list from /admin (reachable via the gear icon, which
+-- only shows for admin accounts). Removing an in-use theme just clears the
+-- tag on those cells (on delete set null) rather than blocking the delete.
+
+create table public.themes (
+  id         bigint generated always as identity primary key,
+  name       text not null unique,
+  created_at timestamptz not null default now()
+);
+alter table public.themes enable row level security;
+
+create policy "themes_select_public"
+  on public.themes for select
+  using (true);
+
+create policy "themes_admin_insert"
+  on public.themes for insert
+  to authenticated
+  with check (public.is_admin());
+
+create policy "themes_admin_delete"
+  on public.themes for delete
+  to authenticated
+  using (public.is_admin());
+
+insert into public.themes (name) values
+  ('Generic'),
+  ('Sketch the Moment'),
+  ('Basics'),
+  ('Typography'),
+  ('People poses'),
+  ('Daily Objects');
+
+alter table public.cells add column theme_id bigint references public.themes(id) on delete set null;

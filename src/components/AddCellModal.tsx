@@ -6,10 +6,12 @@ import type { User } from "@supabase/supabase-js";
 import {
   CellTakenError,
   DailyLimitError,
+  fetchThemes,
   fetchTodayImageUploadCount,
   insertImageCell,
   insertTextCell,
   type CellRow,
+  type Theme,
 } from "@/lib/cells";
 import { resizeImage } from "@/lib/resizeImage";
 import SignInPanel from "./SignInPanel";
@@ -49,6 +51,8 @@ export default function AddCellModal({
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [themeId, setThemeId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -59,6 +63,18 @@ export default function AddCellModal({
         // attempt decide — don't block the user on a transient error.
       });
   }, [user, isAdmin]);
+
+  useEffect(() => {
+    fetchThemes()
+      .then((list) => {
+        setThemes(list);
+        const generic = list.find((t) => t.name === "Generic");
+        setThemeId(generic?.id ?? list[0]?.id ?? null);
+      })
+      .catch(() => {
+        // Leave themes empty — the submit button stays disabled in that case.
+      });
+  }, []);
 
   const pickFile = (f: File | null) => {
     setError(null);
@@ -80,7 +96,7 @@ export default function AddCellModal({
   };
 
   const submitImage = async () => {
-    if (!file || !user) return;
+    if (!file || !user || themeId == null) return;
     setBusy(true);
     setError(null);
     try {
@@ -93,7 +109,7 @@ export default function AddCellModal({
         }
       }
       const { blob, width, height } = await resizeImage(file);
-      const cell = await insertImageCell(x, y, blob, width, height, user.id);
+      const cell = await insertImageCell(x, y, blob, width, height, user.id, themeId);
       onCreated(cell);
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
       // Deliberately no onClose() here — the parent grid now has this cell
@@ -211,11 +227,29 @@ export default function AddCellModal({
                       />
                     </label>
                   )}
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                      Theme
+                    </span>
+                    <select
+                      value={themeId ?? ""}
+                      onChange={(e) => setThemeId(Number(e.target.value))}
+                      className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                    >
+                      {themes.map((theme) => (
+                        <option key={theme.id} value={theme.id}>
+                          {theme.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
                   {error && <p className="text-sm text-red-500">{error}</p>}
                   <button
                     type="button"
                     onClick={submitImage}
-                    disabled={!file || busy}
+                    disabled={!file || busy || themeId == null}
                     className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
                   >
                     {busy ? "Uploading…" : "Add image"}

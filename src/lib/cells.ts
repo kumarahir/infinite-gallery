@@ -13,21 +13,49 @@ export interface CellRow {
   created_by: string;
   created_by_name: string | null;
   created_at: string;
+  theme_id: number | null;
+  themes: { name: string } | null;
+}
+
+export interface Theme {
+  id: number;
+  name: string;
 }
 
 const BUCKET = "cells-images";
+const CELL_SELECT = "*, themes(name)";
+
+export async function fetchThemes(): Promise<Theme[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("themes").select("*").order("name");
+  if (error) throw error;
+  return (data ?? []) as Theme[];
+}
+
+export async function addTheme(name: string): Promise<Theme> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("themes").insert({ name }).select().single();
+  if (error) throw error;
+  return data as Theme;
+}
+
+export async function removeTheme(id: number): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("themes").delete().eq("id", id);
+  if (error) throw error;
+}
 
 export async function fetchCellAt(x: number, y: number): Promise<CellRow | null> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("cells")
-    .select("*")
+    .select(CELL_SELECT)
     .eq("x", x)
     .eq("y", y)
     .maybeSingle();
 
   if (error) throw error;
-  return (data as CellRow) ?? null;
+  return (data as unknown as CellRow) ?? null;
 }
 
 export async function deleteCell(cell: CellRow): Promise<void> {
@@ -48,14 +76,14 @@ export async function fetchCellsInRange(
   const supabase = createClient();
   const { data, error } = await supabase
     .from("cells")
-    .select("*")
+    .select(CELL_SELECT)
     .gte("x", minX)
     .lt("x", maxX)
     .gte("y", minY)
     .lt("y", maxY);
 
   if (error) throw error;
-  return (data ?? []) as CellRow[];
+  return (data ?? []) as unknown as CellRow[];
 }
 
 export class CellTakenError extends Error {
@@ -113,13 +141,14 @@ async function insertCell(row: {
   image_path?: string;
   image_width?: number;
   image_height?: number;
+  theme_id?: number | null;
   created_by: string;
 }): Promise<CellRow> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("cells")
     .insert(row)
-    .select()
+    .select(CELL_SELECT)
     .single();
 
   if (error) {
@@ -127,7 +156,7 @@ async function insertCell(row: {
     if (error.code === "42501") throw new DailyLimitError();
     throw error;
   }
-  return data as CellRow;
+  return data as unknown as CellRow;
 }
 
 // Public storage URLs are deterministic — build the string directly rather
@@ -159,7 +188,8 @@ export async function insertImageCell(
   blob: Blob,
   width: number,
   height: number,
-  userId: string
+  userId: string,
+  themeId: number | null
 ): Promise<CellRow> {
   const supabase = createClient();
   const path = `${userId}/${nanoid()}.webp`;
@@ -178,6 +208,7 @@ export async function insertImageCell(
       image_path: path,
       image_width: width,
       image_height: height,
+      theme_id: themeId,
       created_by: userId,
     });
   } catch (err) {
