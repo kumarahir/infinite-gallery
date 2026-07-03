@@ -93,6 +93,17 @@ export async function fetchTodayImageUploadCount(userId: string): Promise<number
   return count ?? 0;
 }
 
+export async function fetchTotalImageCount(): Promise<number> {
+  const supabase = createClient();
+  const { count, error } = await supabase
+    .from("cells")
+    .select("id", { count: "exact", head: true })
+    .eq("cell_type", "image");
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 async function insertCell(row: {
   x: number;
   y: number;

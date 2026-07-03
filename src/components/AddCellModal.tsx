@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import confetti from "canvas-confetti";
 import type { User } from "@supabase/supabase-js";
 import {
   CellTakenError,
   DailyLimitError,
   fetchTodayImageUploadCount,
+  fetchTotalImageCount,
   insertImageCell,
   insertTextCell,
   type CellRow,
@@ -48,6 +50,8 @@ export default function AddCellModal({
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const [uploadSucceeded, setUploadSucceeded] = useState(false);
+  const [uploadedTotal, setUploadedTotal] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -94,7 +98,13 @@ export default function AddCellModal({
       const { blob, width, height } = await resizeImage(file);
       const cell = await insertImageCell(x, y, blob, width, height, user.id);
       onCreated(cell);
-      onClose();
+      confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
+      setUploadSucceeded(true);
+      fetchTotalImageCount()
+        .then(setUploadedTotal)
+        .catch(() => {
+          // Insert already succeeded — just show the thank-you without a count.
+        });
     } catch (err) {
       if (err instanceof CellTakenError) {
         setTaken(true);
@@ -150,7 +160,21 @@ export default function AddCellModal({
           </button>
         </div>
 
-        {taken ? (
+        {uploadSucceeded ? (
+          <div className="flex flex-col items-center gap-4 py-4 text-center">
+            <p className="text-base font-medium">
+              Thank you for adding one more AtomicSketch
+              {uploadedTotal != null ? ` to make it total of ${uploadedTotal}` : ""}
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-foreground text-background text-sm font-medium px-6 py-2 hover:opacity-90"
+            >
+              Done
+            </button>
+          </div>
+        ) : taken ? (
           <p className="text-sm text-black/70 dark:text-white/70">
             Someone just filled this cell — reload to see what they added.
           </p>
