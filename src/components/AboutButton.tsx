@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
+import AboutModal from "./AboutModal";
 
+// Desktop-only trigger (bottom-right). On mobile, the same modal is opened
+// from the info button in InfiniteGrid's joystick/recenter control row
+// instead, so this renders nothing there.
 export default function AboutButton() {
   const [open, setOpen] = useState(false);
+  const isTouchPrimary = useIsTouchPrimary();
+
+  if (isTouchPrimary) return null;
 
   return (
     <>
@@ -29,57 +37,7 @@ export default function AboutButton() {
         </svg>
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">About AtomicSketches</h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="text-black/40 dark:text-white/40 hover:opacity-70"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-4 text-sm leading-relaxed text-black/80 dark:text-white/80">
-              <p>
-                AtomicSketches is a shared, infinite canvas where creators can share
-                their sketches in the simplest way possible — a place to inspire
-                others and be inspired. Every sketch added here also becomes part
-                of a living archive of everything shared so far.
-              </p>
-
-              <div>
-                <h3 className="font-medium text-black dark:text-white mb-1">Using the gallery</h3>
-                <ul className="list-disc pl-5 flex flex-col gap-1">
-                  <li>Tap any empty cell with a &ldquo;+&rdquo; to add a sketch or a short note.</li>
-                  <li>Sign in (Google or email) is required to add something — viewing is open to everyone.</li>
-                  <li>Pan around by dragging (desktop) or with the on-screen joystick (mobile).</li>
-                  <li>Tap a filled cell to view it enlarged, and share it from there.</li>
-                </ul>
-              </div>
-
-              <div>
-                <h3 className="font-medium text-black dark:text-white mb-1">Image upload rules</h3>
-                <ul className="list-disc pl-5 flex flex-col gap-1">
-                  <li>Supported formats: JPEG, PNG, GIF, WebP, AVIF.</li>
-                  <li>Max file size: 20MB per image.</li>
-                  <li>Up to 5 images per person per day, to keep the gallery growing at a healthy pace for everyone. Text notes have no daily limit.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AboutModal open={open} onClose={() => setOpen(false)} />
     </>
   );
 }
