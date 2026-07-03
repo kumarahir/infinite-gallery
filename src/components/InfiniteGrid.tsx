@@ -10,7 +10,14 @@ import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
-import { BUFFER, CELL_SIZE, JOYSTICK_MAX_SPEED, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
+import {
+  BUFFER,
+  CELL_SIZE,
+  JOYSTICK_MAX_SPEED,
+  MOBILE_CONTROLS_HEIGHT,
+  STEP,
+  TAP_THRESHOLD,
+} from "@/lib/gridConstants";
 import { fetchCellAt, fetchTotalImageCount, type CellRow } from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
@@ -245,11 +252,16 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     velocity.current = { x: 0, y: 0 };
     stopAnimation();
     if (!containerRef.current) return;
+    // On mobile, center within the space above the joystick/recenter row,
+    // not the literal screen center (which those controls would cover).
+    const usableHeight = isTouchPrimary
+      ? containerRef.current.clientHeight - MOBILE_CONTROLS_HEIGHT
+      : containerRef.current.clientHeight;
     commitTranslate({
       x: containerRef.current.clientWidth / 2 - CELL_SIZE / 2,
-      y: containerRef.current.clientHeight / 2 - CELL_SIZE / 2,
+      y: usableHeight / 2 - CELL_SIZE / 2,
     });
-  }, [commitTranslate, stopAnimation]);
+  }, [commitTranslate, stopAnimation, isTouchPrimary]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     stopAnimation();
