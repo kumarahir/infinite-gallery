@@ -357,7 +357,29 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       </div>
 
       {isTouchPrimary && (
-        <Joystick onVector={handleJoystickVector} onDoubleTap={handleRecenter} />
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRecenter}
+            aria-label="Recenter gallery"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5"
+            >
+              <path d="M3 11.5 12 4l9 7.5" />
+              <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
+            </svg>
+          </button>
+          <Joystick onVector={handleJoystickVector} />
+        </div>
       )}
 
       {pendingCell && (() => {

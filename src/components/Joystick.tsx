@@ -5,24 +5,13 @@ import { useRef, useState } from "react";
 const BASE_RADIUS = 48;
 const KNOB_RADIUS = 22;
 const MAX_KNOB_OFFSET = BASE_RADIUS - KNOB_RADIUS;
-const TAP_MAX_OFFSET = 8; // px the knob may have moved and still count as a tap
-const DOUBLE_TAP_MS = 350;
 
 // Reports a normalized direction vector (-1..1 per axis) continuously while
 // held, and (0, 0) on release. Pan speed/physics live in the parent —
 // this component only knows about angle + how far it's been pushed.
-// Also detects a double-tap (press-release near center, twice quickly) and
-// reports it via onDoubleTap, independent of the pan vector.
-export default function Joystick({
-  onVector,
-  onDoubleTap,
-}: {
-  onVector: (dx: number, dy: number) => void;
-  onDoubleTap?: () => void;
-}) {
+export default function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) {
   const baseRef = useRef<HTMLDivElement>(null);
   const active = useRef(false);
-  const lastTapTime = useRef(0);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
 
   const updateFromPointer = (clientX: number, clientY: number) => {
@@ -58,19 +47,8 @@ export default function Joystick({
   const endDrag = () => {
     if (!active.current) return;
     active.current = false;
-    const wasTap = Math.hypot(knobPos.x, knobPos.y) < TAP_MAX_OFFSET;
     setKnobPos({ x: 0, y: 0 });
     onVector(0, 0);
-
-    if (wasTap && onDoubleTap) {
-      const now = performance.now();
-      if (now - lastTapTime.current < DOUBLE_TAP_MS) {
-        lastTapTime.current = 0;
-        onDoubleTap();
-      } else {
-        lastTapTime.current = now;
-      }
-    }
   };
 
   return (
@@ -80,7 +58,7 @@ export default function Joystick({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 w-24 h-24 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 touch-none select-none"
+      className="relative w-24 h-24 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 touch-none select-none"
       aria-label="Pan gallery"
     >
       <div
