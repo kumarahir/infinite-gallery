@@ -13,6 +13,7 @@ import {
   type CellRow,
   type Theme,
 } from "@/lib/cells";
+import { fetchCanUpload } from "@/lib/profiles";
 import { resizeImage } from "@/lib/resizeImage";
 import SignInPanel from "./SignInPanel";
 
@@ -27,6 +28,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 280;
 const DAILY_IMAGE_LIMIT = 5;
 const DAILY_LIMIT_MESSAGE = `You've reached today's limit of ${DAILY_IMAGE_LIMIT} image uploads. Try again tomorrow.`;
+const ADMIN_EMAIL = "kumar.ahir@gmail.com";
 
 export default function AddCellModal({
   x,
@@ -51,6 +53,7 @@ export default function AddCellModal({
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const [uploadBlocked, setUploadBlocked] = useState(false);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
 
@@ -63,6 +66,16 @@ export default function AddCellModal({
         // attempt decide — don't block the user on a transient error.
       });
   }, [user, isAdmin]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchCanUpload(user.id)
+      .then((allowed) => setUploadBlocked(!allowed))
+      .catch(() => {
+        // If the check itself fails, let the (server-enforced) insert
+        // attempt decide — don't block the user on a transient error.
+      });
+  }, [user]);
 
   useEffect(() => {
     fetchThemes()
@@ -100,6 +113,11 @@ export default function AddCellModal({
     setBusy(true);
     setError(null);
     try {
+      if (!(await fetchCanUpload(user.id))) {
+        setUploadBlocked(true);
+        setBusy(false);
+        return;
+      }
       if (!isAdmin) {
         const count = await fetchTodayImageUploadCount(user.id);
         if (count >= DAILY_IMAGE_LIMIT) {
@@ -134,6 +152,11 @@ export default function AddCellModal({
     setBusy(true);
     setError(null);
     try {
+      if (!(await fetchCanUpload(user.id))) {
+        setUploadBlocked(true);
+        setBusy(false);
+        return;
+      }
       const cell = await insertTextCell(x, y, text.trim(), user.id);
       onCreated(cell);
       onClose();
@@ -177,6 +200,14 @@ export default function AddCellModal({
           </p>
         ) : !user ? (
           <SignInPanel title="Sign in to add something here" />
+        ) : uploadBlocked ? (
+          <p className="text-sm text-black/70 dark:text-white/70">
+            You don&rsquo;t have permission to upload right now. Contact{" "}
+            <a href={`mailto:${ADMIN_EMAIL}`} className="underline">
+              {ADMIN_EMAIL}
+            </a>{" "}
+            to request access.
+          </p>
         ) : (
           <>
             <div className="flex rounded-lg bg-black/5 dark:bg-white/5 p-1 text-sm font-medium">

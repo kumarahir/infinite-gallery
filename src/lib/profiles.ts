@@ -28,6 +28,19 @@ export async function updateProfilePermissions(
   if (error) throw error;
 }
 
+// Defaults to true if no profile row is found (e.g. before the profiles
+// migration/trigger has run) so this never blocks uploads that used to work.
+export async function fetchCanUpload(userId: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("can_upload")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.can_upload ?? true;
+}
+
 export async function fetchAdminEmails(): Promise<Set<string>> {
   const supabase = createClient();
   const { data, error } = await supabase.from("admins").select("email");
