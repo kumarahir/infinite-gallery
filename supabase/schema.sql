@@ -257,3 +257,32 @@ create policy "admins_select_admin"
   on public.admins for select
   to authenticated
   using (public.is_admin());
+
+-- v1.6: let admins reset a user's daily image-upload counter without
+-- touching their existing cells. The daily limit counts images created
+-- since whichever is later: the start of today, or this timestamp — so
+-- setting it to now() effectively zeroes the count for the rest of today.
+alter table public.profiles add column upload_limit_reset_at timestamptz;
+
+alter policy "cells_insert_authenticated"
+  on public.cells
+  with check (
+    auth.uid() = created_by
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.can_upload)
+    and (
+      cell_type <> 'image'
+      or public.is_admin()
+      or (
+        select count(*) from public.cells c
+        where c.created_by = auth.uid()
+          and c.cell_type = 'image'
+          and c.created_at >= greatest(
+            date_trunc('day', now()),
+            coalesce(
+              (select p.upload_limit_reset_at from public.profiles p where p.id = auth.uid()),
+              '-infinity'::timestamptz
+            )
+          )
+      ) < 5
+    )
+  );

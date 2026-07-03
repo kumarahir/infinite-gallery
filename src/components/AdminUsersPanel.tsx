@@ -1,19 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchAdminEmails, fetchProfiles, updateProfilePermissions, type Profile } from "@/lib/profiles";
+import {
+  fetchAdminEmails,
+  fetchProfiles,
+  resetUploadLimit,
+  updateProfilePermissions,
+  type Profile,
+} from "@/lib/profiles";
+import { fetchUploadCountsByUser, type UploadCounts } from "@/lib/cells";
 
 export default function AdminUsersPanel() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [adminEmails, setAdminEmails] = useState<Set<string>>(new Set());
+  const [counts, setCounts] = useState<Map<string, UploadCounts>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resetId, setResetId] = useState<string | null>(null);
+  const [justReset, setJustReset] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchProfiles(), fetchAdminEmails()])
-      .then(([p, emails]) => {
+    Promise.all([fetchProfiles(), fetchAdminEmails(), fetchUploadCountsByUser()])
+      .then(([p, emails, uploadCounts]) => {
         setProfiles(p);
         setAdminEmails(emails);
+        setCounts(uploadCounts);
       })
       .catch(() => setError("Failed to load users."))
       .finally(() => setLoading(false));
@@ -36,6 +47,20 @@ export default function AdminUsersPanel() {
     }
   };
 
+  const handleReset = async (profile: Profile) => {
+    setResetId(profile.id);
+    setError(null);
+    try {
+      await resetUploadLimit(profile.id);
+      setJustReset(profile.id);
+      setTimeout(() => setJustReset((id) => (id === profile.id ? null : id)), 2000);
+    } catch {
+      setError("Failed to reset upload limit.");
+    } finally {
+      setResetId(null);
+    }
+  };
+
   if (loading) return <p className="text-sm text-black/50 dark:text-white/50">Loading…</p>;
 
   return (
@@ -44,10 +69,11 @@ export default function AdminUsersPanel() {
       <ul className="flex flex-col gap-2">
         {profiles.map((profile) => {
           const isAdminAccount = adminEmails.has(profile.email.toLowerCase());
+          const userCounts = counts.get(profile.id) ?? { images: 0, text: 0 };
           return (
             <li
               key={profile.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
+              className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
             >
               <div className="min-w-0">
                 <p className="text-sm truncate">
@@ -59,8 +85,12 @@ export default function AdminUsersPanel() {
                   )}
                 </p>
                 <p className="text-xs text-black/50 dark:text-white/50 truncate">{profile.email}</p>
+                <p className="text-xs text-black/50 dark:text-white/50 mt-0.5">
+                  {userCounts.images} image{userCounts.images === 1 ? "" : "s"} ·{" "}
+                  {userCounts.text} text{userCounts.text === 1 ? "" : "s"}
+                </p>
               </div>
-              <div className="flex items-center gap-3 shrink-0 text-xs">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
                 <label className="flex items-center gap-1.5">
                   <input
                     type="checkbox"
@@ -77,6 +107,20 @@ export default function AdminUsersPanel() {
                   />
                   Can upload
                 </label>
+                {!isAdminAccount && (
+                  <button
+                    type="button"
+                    onClick={() => handleReset(profile)}
+                    disabled={resetId === profile.id}
+                    className="ml-auto text-xs font-medium text-black/60 dark:text-white/60 underline hover:opacity-70 disabled:opacity-40"
+                  >
+                    {justReset === profile.id
+                      ? "Reset!"
+                      : resetId === profile.id
+                        ? "Resetting…"
+                        : "Reset daily limit"}
+                  </button>
+                )}
               </div>
             </li>
           );

@@ -103,20 +103,29 @@ export class DailyLimitError extends Error {
 // Non-admins may upload at most 5 images per UTC calendar day — this is
 // also enforced in the `cells_insert_authenticated` RLS policy (the real
 // guarantee, since it can't be bypassed), but checking here first avoids
-// uploading a file to storage just to have the row insert rejected.
+// uploading a file to storage just to have the row insert rejected. Mirrors
+// the policy's own cutoff: whichever is later, start of today or an
+// admin-set upload_limit_reset_at (an admin "reset the limit" action).
 export async function fetchTodayImageUploadCount(userId: string): Promise<number> {
   const supabase = createClient();
   const now = new Date();
-  const startOfDay = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  ).toISOString();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("upload_limit_reset_at")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const resetAt = profile?.upload_limit_reset_at ? new Date(profile.upload_limit_reset_at) : null;
+  const cutoff = resetAt && resetAt > startOfDay ? resetAt : startOfDay;
 
   const { count, error } = await supabase
     .from("cells")
     .select("id", { count: "exact", head: true })
     .eq("created_by", userId)
     .eq("cell_type", "image")
-    .gte("created_at", startOfDay);
+    .gte("created_at", cutoff.toISOString());
 
   if (error) throw error;
   return count ?? 0;
@@ -131,6 +140,42 @@ export async function fetchTotalImageCount(): Promise<number> {
 
   if (error) throw error;
   return count ?? 0;
+}
+
+export interface UploadCounts {
+  images: number;
+  text: number;
+}
+
+export async function fetchUploadCountsByUser(): Promise<Map<string, UploadCounts>> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("cells").select("created_by, cell_type");
+  if (error) throw error;
+
+  const counts = new Map<string, UploadCounts>();
+  for (const row of data ?? []) {
+    const entry = counts.get(row.created_by) ?? { images: 0, text: 0 };
+    if (row.cell_type === "image") entry.images += 1;
+    else entry.text += 1;
+    counts.set(row.created_by, entry);
+  }
+  return counts;
+}
+
+export async function fetchUploadCountsByTheme(): Promise<Map<number, number>> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cells")
+    .select("theme_id")
+    .eq("cell_type", "image");
+  if (error) throw error;
+
+  const counts = new Map<number, number>();
+  for (const row of data ?? []) {
+    if (row.theme_id == null) continue;
+    counts.set(row.theme_id, (counts.get(row.theme_id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 async function insertCell(row: {

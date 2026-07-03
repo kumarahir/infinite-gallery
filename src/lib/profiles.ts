@@ -34,3 +34,15 @@ export async function fetchAdminEmails(): Promise<Set<string>> {
   if (error) throw error;
   return new Set((data ?? []).map((row) => row.email.toLowerCase()));
 }
+
+// Doesn't touch any existing cells — the daily image limit counts cells
+// created since whichever is later, start of today or this timestamp, so
+// setting it to now() effectively zeroes the user's count for today.
+export async function resetUploadLimit(id: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ upload_limit_reset_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}

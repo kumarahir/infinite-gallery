@@ -1,23 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addTheme, fetchThemes, removeTheme, type Theme } from "@/lib/cells";
+import { addTheme, fetchThemes, fetchUploadCountsByTheme, removeTheme, type Theme } from "@/lib/cells";
 
 export default function AdminThemesPanel() {
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [counts, setCounts] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
-    fetchThemes()
-      .then(setThemes)
+  useEffect(() => {
+    Promise.all([fetchThemes(), fetchUploadCountsByTheme()])
+      .then(([themeList, themeCounts]) => {
+        setThemes(themeList);
+        setCounts(themeCounts);
+      })
       .catch(() => setError("Failed to load themes."))
       .finally(() => setLoading(false));
-  };
-
-  useEffect(load, []);
+  }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,7 +82,12 @@ export default function AdminThemesPanel() {
               key={theme.id}
               className="flex items-center justify-between rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
             >
-              <span className="text-sm">{theme.name}</span>
+              <span className="text-sm">
+                {theme.name}{" "}
+                <span className="text-black/40 dark:text-white/40">
+                  ({counts.get(theme.id) ?? 0})
+                </span>
+              </span>
               <button
                 type="button"
                 onClick={() => handleRemove(theme)}
