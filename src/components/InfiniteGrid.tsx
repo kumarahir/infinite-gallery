@@ -240,6 +240,17 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [runPhysics]
   );
 
+  const handleRecenter = useCallback(() => {
+    joystickActive.current = false;
+    velocity.current = { x: 0, y: 0 };
+    stopAnimation();
+    if (!containerRef.current) return;
+    commitTranslate({
+      x: containerRef.current.clientWidth / 2 - CELL_SIZE / 2,
+      y: containerRef.current.clientHeight / 2 - CELL_SIZE / 2,
+    });
+  }, [commitTranslate, stopAnimation]);
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     stopAnimation();
     velocity.current = { x: 0, y: 0 };
@@ -345,7 +356,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       </div>
 
-      {isTouchPrimary && <Joystick onVector={handleJoystickVector} />}
+      {isTouchPrimary && (
+        <Joystick onVector={handleJoystickVector} onDoubleTap={handleRecenter} />
+      )}
 
       {pendingCell && (() => {
         const existing = getCell(pendingCell.x, pendingCell.y);

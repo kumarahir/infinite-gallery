@@ -5,13 +5,24 @@ import { useRef, useState } from "react";
 const BASE_RADIUS = 48;
 const KNOB_RADIUS = 22;
 const MAX_KNOB_OFFSET = BASE_RADIUS - KNOB_RADIUS;
+const TAP_MAX_OFFSET = 8; // px the knob may have moved and still count as a tap
+const DOUBLE_TAP_MS = 350;
 
 // Reports a normalized direction vector (-1..1 per axis) continuously while
 // held, and (0, 0) on release. Pan speed/physics live in the parent —
 // this component only knows about angle + how far it's been pushed.
-export default function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) {
+// Also detects a double-tap (press-release near center, twice quickly) and
+// reports it via onDoubleTap, independent of the pan vector.
+export default function Joystick({
+  onVector,
+  onDoubleTap,
+}: {
+  onVector: (dx: number, dy: number) => void;
+  onDoubleTap?: () => void;
+}) {
   const baseRef = useRef<HTMLDivElement>(null);
   const active = useRef(false);
+  const lastTapTime = useRef(0);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
 
   const updateFromPointer = (clientX: number, clientY: number) => {
@@ -47,8 +58,19 @@ export default function Joystick({ onVector }: { onVector: (dx: number, dy: numb
   const endDrag = () => {
     if (!active.current) return;
     active.current = false;
+    const wasTap = Math.hypot(knobPos.x, knobPos.y) < TAP_MAX_OFFSET;
     setKnobPos({ x: 0, y: 0 });
     onVector(0, 0);
+
+    if (wasTap && onDoubleTap) {
+      const now = performance.now();
+      if (now - lastTapTime.current < DOUBLE_TAP_MS) {
+        lastTapTime.current = 0;
+        onDoubleTap();
+      } else {
+        lastTapTime.current = now;
+      }
+    }
   };
 
   return (
