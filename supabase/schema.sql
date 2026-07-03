@@ -112,3 +112,16 @@ alter policy "cells_insert_authenticated"
       ) < 5
     )
   );
+
+-- v1.3: show who uploaded each cell. Derived server-side from the JWT at
+-- insert time (not sent by the client), so it can't be spoofed. Falls back
+-- from Google's display name to the email for magic-link users. Existing
+-- rows keep a null name — the UI just omits attribution for those.
+
+alter table public.cells add column created_by_name text default (
+  coalesce(
+    auth.jwt() -> 'user_metadata' ->> 'full_name',
+    auth.jwt() -> 'user_metadata' ->> 'name',
+    auth.jwt() ->> 'email'
+  )
+);

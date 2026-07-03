@@ -11,6 +11,7 @@ export interface CellRow {
   image_width: number | null;
   image_height: number | null;
   created_by: string;
+  created_by_name: string | null;
   created_at: string;
 }
 

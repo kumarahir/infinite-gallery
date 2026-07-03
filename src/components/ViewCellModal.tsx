@@ -88,6 +88,12 @@ export default function ViewCellModal({
           </p>
         )}
 
+        {cell.cell_type === "image" && cell.created_by_name && (
+          <p className="text-xs text-black/50 dark:text-white/50 text-center -mt-2">
+            Uploaded by {cell.created_by_name}
+          </p>
+        )}
+
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         <div className="flex items-center justify-between gap-3">
