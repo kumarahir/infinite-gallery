@@ -21,6 +21,7 @@ export default function ViewCellModal({
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const remove = async () => {
     setRemoving(true);
@@ -64,13 +65,21 @@ export default function ViewCellModal({
         )}
 
         {cell.cell_type === "image" && cell.image_path ? (
-          <div className="flex items-center justify-center max-h-[70vh] overflow-hidden rounded-lg bg-black/5 dark:bg-white/5">
+          <div className="relative flex items-center justify-center max-h-[70vh] overflow-hidden rounded-lg bg-black/5 dark:bg-white/5">
+            {!imageLoaded && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
+              </div>
+            )}
             <Image
               src={getPublicImageUrl(cell.image_path)}
               alt=""
               width={cell.image_width ?? 800}
               height={cell.image_height ?? 800}
-              className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
+              onLoad={() => setImageLoaded(true)}
+              className={`max-w-full max-h-[70vh] w-auto h-auto object-contain transition-opacity duration-200 ${
+                imageLoaded ? "opacity-100" : "opacity-0"
+              }`}
             />
           </div>
         ) : (
