@@ -8,11 +8,13 @@ import ShareButton from "./ShareButton";
 export default function ViewCellModal({
   cell,
   isAdmin,
+  celebrateTotal,
   onClose,
   onDeleted,
 }: {
   cell: CellRow;
   isAdmin: boolean;
+  celebrateTotal?: number | null;
   onClose: () => void;
   onDeleted: (x: number, y: number) => void;
 }) {
@@ -53,6 +55,13 @@ export default function ViewCellModal({
             ×
           </button>
         </div>
+
+        {celebrateTotal !== undefined && (
+          <p className="text-sm font-medium text-center">
+            Thank you for adding one more AtomicSketch
+            {celebrateTotal != null ? ` to make it total of ${celebrateTotal}` : ""}
+          </p>
+        )}
 
         {cell.cell_type === "image" && cell.image_path ? (
           <div className="flex items-center justify-center max-h-[70vh] overflow-hidden rounded-lg bg-black/5 dark:bg-white/5">

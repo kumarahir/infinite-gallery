@@ -11,7 +11,7 @@ import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
 import { BUFFER, CELL_SIZE, JOYSTICK_MAX_SPEED, STEP, TAP_THRESHOLD } from "@/lib/gridConstants";
-import { fetchCellAt, type CellRow } from "@/lib/cells";
+import { fetchCellAt, fetchTotalImageCount, type CellRow } from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -27,6 +27,11 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [pendingCell, setPendingCell] = useState<{ x: number; y: number } | null>(null);
+  const [celebration, setCelebration] = useState<{
+    x: number;
+    y: number;
+    total: number | null;
+  } | null>(null);
 
   const dragState = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: 0 });
   const lastSample = useRef({ x: 0, y: 0, t: 0 });
@@ -209,6 +214,22 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, getCell, version]);
 
+  const handleCellCreated = useCallback(
+    (cell: CellRow) => {
+      addLocalCell(cell);
+      if (cell.cell_type !== "image") return;
+      // Show the thank-you banner immediately (count fills in once known) —
+      // the ViewCellModal that's about to render for this cell reads it.
+      setCelebration({ x: cell.x, y: cell.y, total: null });
+      fetchTotalImageCount()
+        .then((total) => setCelebration({ x: cell.x, y: cell.y, total }))
+        .catch(() => {
+          // Leave the banner showing without a count rather than erroring out.
+        });
+    },
+    [addLocalCell]
+  );
+
   const handleJoystickVector = useCallback(
     (dx: number, dy: number) => {
       joystickVector.current = { x: dx, y: dy };
@@ -328,11 +349,20 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
       {pendingCell && (() => {
         const existing = getCell(pendingCell.x, pendingCell.y);
+        const closeModal = () => {
+          setPendingCell(null);
+          setCelebration(null);
+        };
         return existing ? (
           <ViewCellModal
             cell={existing}
             isAdmin={isAdmin}
-            onClose={() => setPendingCell(null)}
+            celebrateTotal={
+              celebration && celebration.x === pendingCell.x && celebration.y === pendingCell.y
+                ? celebration.total
+                : undefined
+            }
+            onClose={closeModal}
             onDeleted={removeLocalCell}
           />
         ) : (
@@ -341,8 +371,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             y={pendingCell.y}
             user={user}
             isAdmin={isAdmin}
-            onClose={() => setPendingCell(null)}
-            onCreated={addLocalCell}
+            onClose={closeModal}
+            onCreated={handleCellCreated}
           />
         );
       })()}

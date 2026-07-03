@@ -7,7 +7,6 @@ import {
   CellTakenError,
   DailyLimitError,
   fetchTodayImageUploadCount,
-  fetchTotalImageCount,
   insertImageCell,
   insertTextCell,
   type CellRow,
@@ -50,8 +49,6 @@ export default function AddCellModal({
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
-  const [uploadSucceeded, setUploadSucceeded] = useState(false);
-  const [uploadedTotal, setUploadedTotal] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -99,12 +96,10 @@ export default function AddCellModal({
       const cell = await insertImageCell(x, y, blob, width, height, user.id);
       onCreated(cell);
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
-      setUploadSucceeded(true);
-      fetchTotalImageCount()
-        .then(setUploadedTotal)
-        .catch(() => {
-          // Insert already succeeded — just show the thank-you without a count.
-        });
+      // Deliberately no onClose() here — the parent grid now has this cell
+      // in its cache, so it re-renders this same pendingCell coordinate as
+      // ViewCellModal (showing the image + thank-you banner) instead of
+      // this form. Closing here would immediately undo that hand-off.
     } catch (err) {
       if (err instanceof CellTakenError) {
         setTaken(true);
@@ -160,21 +155,7 @@ export default function AddCellModal({
           </button>
         </div>
 
-        {uploadSucceeded ? (
-          <div className="flex flex-col items-center gap-4 py-4 text-center">
-            <p className="text-base font-medium">
-              Thank you for adding one more AtomicSketch
-              {uploadedTotal != null ? ` to make it total of ${uploadedTotal}` : ""}
-            </p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg bg-foreground text-background text-sm font-medium px-6 py-2 hover:opacity-90"
-            >
-              Done
-            </button>
-          </div>
-        ) : taken ? (
+        {taken ? (
           <p className="text-sm text-black/70 dark:text-white/70">
             Someone just filled this cell — reload to see what they added.
           </p>
