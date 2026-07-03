@@ -54,6 +54,9 @@ export default function AddCellModal({
   const [taken, setTaken] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
   const [uploadBlocked, setUploadBlocked] = useState(false);
+  // Starts true so the upload form never flashes before we know whether
+  // this user is allowed to upload at all.
+  const [checkingPermission, setCheckingPermission] = useState(true);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
 
@@ -68,13 +71,17 @@ export default function AddCellModal({
   }, [user, isAdmin]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setCheckingPermission(false);
+      return;
+    }
     fetchCanUpload(user.id)
       .then((allowed) => setUploadBlocked(!allowed))
       .catch(() => {
         // If the check itself fails, let the (server-enforced) insert
         // attempt decide — don't block the user on a transient error.
-      });
+      })
+      .finally(() => setCheckingPermission(false));
   }, [user]);
 
   useEffect(() => {
@@ -200,6 +207,10 @@ export default function AddCellModal({
           </p>
         ) : !user ? (
           <SignInPanel title="Sign in to add something here" />
+        ) : checkingPermission ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
+          </div>
         ) : uploadBlocked ? (
           <p className="text-sm text-black/70 dark:text-white/70">
             You don&rsquo;t have permission to upload right now. Contact{" "}
