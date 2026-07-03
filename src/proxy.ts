@@ -26,7 +26,26 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("can_login")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile && profile.can_login === false) {
+      await supabase.auth.signOut();
+      const redirectResponse = NextResponse.redirect(
+        new URL("/?auth_error=account_suspended", request.url)
+      );
+      response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+      return redirectResponse;
+    }
+  }
 
   return response;
 }

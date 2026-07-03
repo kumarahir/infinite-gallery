@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 const FRIENDLY_MESSAGES: Record<string, string> = {
   otp_expired:
     "That sign-in link was already used or expired before you clicked it. This often happens with corporate email (security scanners open links automatically). Try again, or use a personal email / Google sign-in instead.",
+  account_suspended:
+    "Your account has been suspended. Contact the site admin if you think this is a mistake.",
 };
 
 export default function AuthErrorBanner() {

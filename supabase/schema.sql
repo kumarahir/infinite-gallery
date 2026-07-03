@@ -162,3 +162,98 @@ insert into public.themes (name) values
   ('Daily Objects');
 
 alter table public.cells add column theme_id bigint references public.themes(id) on delete set null;
+
+-- v1.5: per-user permissions (login / upload) for moderating abuse.
+-- auth.users isn't queryable from the app, so we mirror it into a normal
+-- public.profiles table via a trigger — the standard Supabase pattern for
+-- this. can_upload is enforced by real RLS (unbypassable). can_login is an
+-- app-level "soft ban": RLS can't block the sign-in handshake itself, so
+-- src/proxy.ts checks this on every navigation and signs the user back out
+-- immediately if false — see that file for the enforcement side.
+
+create table public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  email        text not null,
+  display_name text,
+  can_login    boolean not null default true,
+  can_upload   boolean not null default true,
+  created_at   timestamptz not null default now()
+);
+alter table public.profiles enable row level security;
+
+create policy "profiles_select_self"
+  on public.profiles for select
+  to authenticated
+  using (id = auth.uid());
+
+create policy "profiles_select_admin"
+  on public.profiles for select
+  to authenticated
+  using (public.is_admin());
+
+create policy "profiles_admin_update"
+  on public.profiles for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, display_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1))
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Backfill everyone who signed up before this trigger existed.
+insert into public.profiles (id, email, display_name)
+select id, email, coalesce(raw_user_meta_data->>'full_name', raw_user_meta_data->>'name', split_part(email, '@', 1))
+from auth.users
+on conflict (id) do nothing;
+
+alter policy "cells_insert_authenticated"
+  on public.cells
+  with check (
+    auth.uid() = created_by
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.can_upload)
+    and (
+      cell_type <> 'image'
+      or public.is_admin()
+      or (
+        select count(*) from public.cells c
+        where c.created_by = auth.uid()
+          and c.cell_type = 'image'
+          and c.created_at >= date_trunc('day', now())
+      ) < 5
+    )
+  );
+
+alter policy "cells_images_authenticated_insert"
+  on storage.objects
+  with check (
+    bucket_id = 'cells-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.can_upload)
+  );
+
+-- Admins can also see the full admin list (not just their own row) so the
+-- Users panel can tag admin accounts and avoid accidental self-lockout.
+create policy "admins_select_admin"
+  on public.admins for select
+  to authenticated
+  using (public.is_admin());
