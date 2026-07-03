@@ -39,24 +39,13 @@ export default function ViewCellModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-4"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-black/40 dark:text-white/40 hover:opacity-70"
-          >
-            ×
-          </button>
-        </div>
-
         {celebrateTotal !== undefined && (
           <p className="text-sm font-medium text-center">
             Thank you for adding one more AtomicSketch
@@ -138,6 +127,27 @@ export default function ViewCellModal({
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="flex items-center justify-center self-center w-9 h-9 rounded-full border border-black/10 dark:border-white/15 text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <path d="M18 6 6 18" />
+            <path d="M6 6l12 12" />
+          </svg>
+        </button>
       </div>
     </div>
   );
