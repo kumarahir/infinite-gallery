@@ -258,12 +258,12 @@ alter policy "cells_images_authenticated_insert"
     and exists (select 1 from public.profiles p where p.id = auth.uid() and p.can_upload)
   );
 
--- Admins can also see the full admin list (not just their own row) so the
--- Users panel can tag admin accounts and avoid accidental self-lockout.
-create policy "admins_select_admin"
-  on public.admins for select
-  to authenticated
-  using (public.is_admin());
+-- NOTE: an earlier "admins_select_admin" policy (using public.is_admin())
+-- was removed here — it made admins' own RLS call is_admin(), which itself
+-- queries admins, recursing infinitely until Postgres hit max_stack_depth
+-- (error 54001). That broke every upload, since is_admin() is evaluated
+-- via the can_upload check on many paths. Do not re-add a policy on
+-- public.admins that calls is_admin() in its USING/WITH CHECK clause.
 
 -- v1.6: let admins reset a user's daily image-upload counter without
 -- touching their existing cells. The daily limit counts images created
