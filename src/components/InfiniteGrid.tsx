@@ -424,8 +424,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           </button>
           <div className="relative w-24 h-24 flex items-center justify-center">
             <div
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-200"
-              style={{ opacity: radarVisible ? 1 : 0 }}
+              className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
+              style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
             >
               <MinimapRadar ref={minimapRef} dots={dotCoords} />
             </div>
