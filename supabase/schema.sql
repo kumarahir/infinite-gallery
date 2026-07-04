@@ -87,10 +87,17 @@ create policy "cells_images_admin_delete"
 -- (not just client-side) so it can't be bypassed by calling the API
 -- directly.
 
+-- security definer is required here: this function is called from RLS
+-- policies (including admins_select_admin, added later below), so its own
+-- internal query must bypass admins' RLS rather than re-trigger it — without
+-- this, is_admin() recurses into itself indefinitely (Postgres error 54001,
+-- stack depth exceeded) every time it runs.
 create or replace function public.is_admin()
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email')
