@@ -31,6 +31,7 @@ import {
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
 const MAX_FRAME_DELTA = 48; // ms, guards against tab-switch stalls
+const RECENTER_DURATION = 400; // ms, ease-out pan when tapping the recenter button
 
 export default function InfiniteGrid({ initialUser }: { initialUser: User | null }) {
   const user = useUser(initialUser);
@@ -279,21 +280,42 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [runPhysics]
   );
 
+  // Eases the view to a target translate over RECENTER_DURATION rather than
+  // jumping instantly — reuses the same rafId slot as runPhysics (mutually
+  // exclusive, since stopAnimation() cancels whichever is running first).
+  const animateTranslateTo = useCallback(
+    (target: { x: number; y: number }) => {
+      stopAnimation();
+      const start = { ...translateRef.current };
+      const startTime = performance.now();
+      const step = (ts: number) => {
+        const t = Math.min((ts - startTime) / RECENTER_DURATION, 1);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+        commitTranslate({
+          x: start.x + (target.x - start.x) * eased,
+          y: start.y + (target.y - start.y) * eased,
+        });
+        rafId.current = t < 1 ? requestAnimationFrame(step) : null;
+      };
+      rafId.current = requestAnimationFrame(step);
+    },
+    [commitTranslate, stopAnimation]
+  );
+
   const handleRecenter = useCallback(() => {
     joystickActive.current = false;
     velocity.current = { x: 0, y: 0 };
-    stopAnimation();
     if (!containerRef.current) return;
     // On mobile, center within the space above the joystick/recenter row,
     // not the literal screen center (which those controls would cover).
     const usableHeight = isTouchPrimary
       ? containerRef.current.clientHeight - MOBILE_CONTROLS_HEIGHT
       : containerRef.current.clientHeight;
-    commitTranslate({
+    animateTranslateTo({
       x: containerRef.current.clientWidth / 2 - CELL_SIZE / 2,
       y: usableHeight / 2 - CELL_SIZE / 2,
     });
-  }, [commitTranslate, stopAnimation, isTouchPrimary]);
+  }, [animateTranslateTo, isTouchPrimary]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     stopAnimation();
