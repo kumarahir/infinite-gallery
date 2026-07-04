@@ -27,6 +27,7 @@ import {
   type CellCoord,
   type CellRow,
 } from "@/lib/cells";
+import { vibrate } from "@/lib/haptics";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -52,12 +53,18 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
   const [radarVisible, setRadarVisible] = useState(false);
   const minimapRef = useRef<MinimapRadarHandle>(null);
+  // The cell currently sitting at the exact horizontal+vertical center of
+  // the viewport — drives both the crossing haptic and the pop-in
+  // animation, so a cell only "pops" once it's precisely centered rather
+  // than merely visible.
+  const [centeredCell, setCenteredCell] = useState<{ x: number; y: number } | null>(null);
 
   const dragState = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: 0 });
   const lastSample = useRef({ x: 0, y: 0, t: 0 });
   const velocity = useRef({ x: 0, y: 0 });
   const rafId = useRef<number | null>(null);
   const lastFrameTime = useRef<number | null>(null);
+  const lastCrossedCellRef = useRef<{ x: number; y: number } | null>(null);
 
   // Joystick input (mobile only) — a normalized -1..1 direction vector,
   // driven directly at JOYSTICK_MAX_SPEED while held. Releasing it just
@@ -74,12 +81,31 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const translateRef = useRef({ x: 0, y: 0 });
   const syncScheduled = useRef(false);
 
+  const { ensureRange, getCell, addLocalCell, removeLocalCell, version } = useCellChunks();
+
   const paintTransform = useCallback(() => {
     if (wrapperRef.current) {
       wrapperRef.current.style.transform = `translate3d(${translateRef.current.x}px, ${translateRef.current.y}px, 0)`;
     }
     minimapRef.current?.setPan(translateRef.current.x, translateRef.current.y);
-  }, []);
+
+    if (containerRef.current) {
+      const cx = Math.floor(
+        (containerRef.current.clientWidth / 2 - translateRef.current.x) / STEP
+      );
+      const cy = Math.floor(
+        (containerRef.current.clientHeight / 2 - translateRef.current.y) / STEP
+      );
+      const last = lastCrossedCellRef.current;
+      if (!last || last.x !== cx || last.y !== cy) {
+        lastCrossedCellRef.current = { x: cx, y: cy };
+        setCenteredCell({ x: cx, y: cy });
+        if (getCell(cx, cy)?.cell_type === "image") {
+          vibrate(10);
+        }
+      }
+    }
+  }, [getCell]);
 
   const scheduleStateSync = useCallback(() => {
     if (syncScheduled.current) return;
@@ -98,8 +124,6 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     },
     [paintTransform, scheduleStateSync]
   );
-
-  const { ensureRange, getCell, addLocalCell, removeLocalCell, version } = useCellChunks();
 
   const stopAnimation = useCallback(() => {
     if (rafId.current != null) {
@@ -250,6 +274,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       addLocalCell(cell);
       if (cell.cell_type !== "image") return;
       setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y }]);
+      // A double pulse reads as more "celebratory" than the single tap buzz.
+      vibrate([15, 60, 15]);
       // Show the thank-you banner immediately (count fills in once known) —
       // the ViewCellModal that's about to render for this cell reads it.
       setCelebration({ x: cell.x, y: cell.y, total: null });
@@ -376,6 +402,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         const cellX = Math.floor((e.clientX - rect.left - translateRef.current.x) / STEP);
         const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / STEP);
         setPendingCell({ x: cellX, y: cellY });
+        vibrate(15);
       }
     } else if (!isTouchPrimary) {
       runPhysics();
@@ -420,7 +447,13 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           }}
         >
           {cellsInView.map(({ x, y, cell }) => (
-            <GridCell key={`${x}:${y}`} x={x} y={y} cell={cell} />
+            <GridCell
+              key={`${x}:${y}`}
+              x={x}
+              y={y}
+              cell={cell}
+              isCentered={centeredCell?.x === x && centeredCell?.y === y}
+            />
           ))}
         </div>
       </div>
