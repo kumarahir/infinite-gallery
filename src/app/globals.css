@@ -24,3 +24,17 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Desktop-only hover lift for grid cells — (hover: hover) and (pointer: fine)
+   excludes touch devices, which either can't hover at all or only fire a
+   sticky/simulated hover on tap that would otherwise get stuck "on". */
+@media (hover: hover) and (pointer: fine) {
+  .grid-cell {
+    transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+  }
+  .grid-cell:hover {
+    transform: scale(1.04);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    z-index: 1;
+  }
+}

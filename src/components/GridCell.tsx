@@ -24,7 +24,7 @@ function GridCell({
     return (
       <div
         style={style}
-        className="flex items-center justify-center rounded-lg border border-dashed border-black/20 dark:border-white/25 bg-black/[0.03] dark:bg-white/[0.04] text-black/30 dark:text-white/35"
+        className="grid-cell flex items-center justify-center rounded-lg border border-dashed border-black/20 dark:border-white/25 bg-black/[0.03] dark:bg-white/[0.04] text-black/30 dark:text-white/35"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -33,11 +33,9 @@ function GridCell({
           stroke="currentColor"
           strokeWidth={2}
           strokeLinecap="round"
-          strokeLinejoin="round"
           className="w-6 h-6 pointer-events-none"
         >
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          <path d="M12 5v14M5 12h14" />
         </svg>
       </div>
     );
@@ -47,7 +45,7 @@ function GridCell({
     return (
       <div
         style={style}
-        className="rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
+        className="grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
       >
         <Image
           src={getPublicImageUrl(cell.image_path)}
@@ -64,7 +62,7 @@ function GridCell({
   return (
     <div
       style={style}
-      className="rounded-lg bg-black/5 dark:bg-white/5 p-3 overflow-hidden"
+      className="grid-cell rounded-lg bg-black/5 dark:bg-white/5 p-3 overflow-hidden"
     >
       <p className="text-sm leading-snug break-words line-clamp-[7] pointer-events-none">
         {cell.text_content}
