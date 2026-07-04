@@ -272,7 +272,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
   const handleJoystickVector = useCallback(
     (dx: number, dy: number) => {
-      joystickVector.current = { x: dx, y: dy };
+      // Camera-control convention, not drag-to-pan: pushing the stick up
+      // should feel like moving the view toward the top of the gallery, the
+      // opposite sign from how a raw drag gesture maps to translate.
+      joystickVector.current = { x: -dx, y: -dy };
       const active = dx !== 0 || dy !== 0;
       joystickActive.current = active;
       if (active) runPhysics();
