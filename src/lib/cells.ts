@@ -131,6 +131,26 @@ export async function fetchTodayImageUploadCount(userId: string): Promise<number
   return count ?? 0;
 }
 
+export interface CellCoord {
+  x: number;
+  y: number;
+}
+
+// Lightweight — just two integers per row — for the mobile minimap radar,
+// which plots every image as a single dot. Fetched once and kept in sync
+// client-side afterward rather than re-queried, since the app's current
+// scale makes a full fetch far simpler than a proximity query.
+export async function fetchAllImageCoords(): Promise<CellCoord[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cells")
+    .select("x, y")
+    .eq("cell_type", "image");
+
+  if (error) throw error;
+  return (data ?? []) as CellCoord[];
+}
+
 export async function fetchTotalImageCount(): Promise<number> {
   const supabase = createClient();
   const { count, error } = await supabase

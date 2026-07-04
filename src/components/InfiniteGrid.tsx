@@ -7,6 +7,7 @@ import AddCellModal from "./AddCellModal";
 import ViewCellModal from "./ViewCellModal";
 import Joystick from "./Joystick";
 import AboutModal from "./AboutModal";
+import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -19,7 +20,13 @@ import {
   STEP,
   TAP_THRESHOLD,
 } from "@/lib/gridConstants";
-import { fetchCellAt, fetchTotalImageCount, type CellRow } from "@/lib/cells";
+import {
+  fetchAllImageCoords,
+  fetchCellAt,
+  fetchTotalImageCount,
+  type CellCoord,
+  type CellRow,
+} from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -41,6 +48,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     y: number;
     total: number | null;
   } | null>(null);
+  const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
+  const [radarVisible, setRadarVisible] = useState(false);
+  const minimapRef = useRef<MinimapRadarHandle>(null);
 
   const dragState = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: 0 });
   const lastSample = useRef({ x: 0, y: 0, t: 0 });
@@ -67,6 +77,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     if (wrapperRef.current) {
       wrapperRef.current.style.transform = `translate3d(${translateRef.current.x}px, ${translateRef.current.y}px, 0)`;
     }
+    minimapRef.current?.setPan(translateRef.current.x, translateRef.current.y);
   }, []);
 
   const scheduleStateSync = useCallback(() => {
@@ -152,6 +163,16 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
   useEffect(() => stopAnimation, [stopAnimation]);
 
+  // Fetched once for the mobile minimap radar — kept in sync afterward via
+  // handleCellCreated/handleCellDeleted rather than re-queried.
+  useEffect(() => {
+    fetchAllImageCoords()
+      .then(setDotCoords)
+      .catch(() => {
+        // Radar just shows no dots if this fails — not worth surfacing an error for.
+      });
+  }, []);
+
   // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid on it.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -227,6 +248,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     (cell: CellRow) => {
       addLocalCell(cell);
       if (cell.cell_type !== "image") return;
+      setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y }]);
       // Show the thank-you banner immediately (count fills in once known) —
       // the ViewCellModal that's about to render for this cell reads it.
       setCelebration({ x: cell.x, y: cell.y, total: null });
@@ -237,6 +259,14 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         });
     },
     [addLocalCell]
+  );
+
+  const handleCellDeleted = useCallback(
+    (x: number, y: number) => {
+      removeLocalCell(x, y);
+      setDotCoords((prev) => prev.filter((d) => d.x !== x || d.y !== y));
+    },
+    [removeLocalCell]
   );
 
   const handleJoystickVector = useCallback(
@@ -392,7 +422,15 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
             </svg>
           </button>
-          <Joystick onVector={handleJoystickVector} />
+          <div className="relative w-24 h-24 flex items-center justify-center">
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-200"
+              style={{ opacity: radarVisible ? 1 : 0 }}
+            >
+              <MinimapRadar ref={minimapRef} dots={dotCoords} />
+            </div>
+            <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
+          </div>
           <button
             type="button"
             onClick={() => setAboutOpen(true)}
@@ -435,7 +473,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
                 : undefined
             }
             onClose={closeModal}
-            onDeleted={removeLocalCell}
+            onDeleted={handleCellDeleted}
           />
         ) : (
           <AddCellModal

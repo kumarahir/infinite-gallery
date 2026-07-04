@@ -9,7 +9,15 @@ const MAX_KNOB_OFFSET = BASE_RADIUS - KNOB_RADIUS;
 // Reports a normalized direction vector (-1..1 per axis) continuously while
 // held, and (0, 0) on release. Pan speed/physics live in the parent —
 // this component only knows about angle + how far it's been pushed.
-export default function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) {
+// onActiveChange reports pressed/released separately from the vector,
+// since holding it centered is still "active" but reports (0, 0).
+export default function Joystick({
+  onVector,
+  onActiveChange,
+}: {
+  onVector: (dx: number, dy: number) => void;
+  onActiveChange?: (active: boolean) => void;
+}) {
   const baseRef = useRef<HTMLDivElement>(null);
   const active = useRef(false);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
@@ -31,6 +39,7 @@ export default function Joystick({ onVector }: { onVector: (dx: number, dy: numb
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     active.current = true;
+    onActiveChange?.(true);
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -47,6 +56,7 @@ export default function Joystick({ onVector }: { onVector: (dx: number, dy: numb
   const endDrag = () => {
     if (!active.current) return;
     active.current = false;
+    onActiveChange?.(false);
     setKnobPos({ x: 0, y: 0 });
     onVector(0, 0);
   };

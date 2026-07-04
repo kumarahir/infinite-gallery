@@ -17,3 +17,10 @@ export const JOYSTICK_MAX_SPEED = 12;
 // so the target cell lands in the middle of the space actually above the
 // controls, not the literal screen center (which the joystick would cover).
 export const MOBILE_CONTROLS_HEIGHT = 144;
+
+// Minimap radar (mobile, shown while the joystick is held). On-screen
+// radius in px, and how many grid cells across that radius should
+// represent — both are first-pass visual defaults, easy to retune.
+export const MINIMAP_RADIUS_PX = 100;
+export const MINIMAP_WORLD_RADIUS_CELLS = 15;
+export const MINIMAP_SCALE = MINIMAP_RADIUS_PX / (MINIMAP_WORLD_RADIUS_CELLS * STEP);

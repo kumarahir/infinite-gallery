@@ -38,3 +38,17 @@ body {
     z-index: 1;
   }
 }
+
+/* Mobile minimap radar sweep — purely decorative rotation, GPU-composited. */
+@keyframes radar-sweep-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.radar-sweep {
+  animation: radar-sweep-spin 3s linear infinite;
+}
