@@ -355,11 +355,6 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       Math.hypot(e.clientX - dragState.current.startX, e.clientY - dragState.current.startY)
     );
 
-    // Swipe-to-pan is mobile-only disabled — panning there happens via the
-    // joystick instead (direct touch-drag caused sluggish, GC-heavy
-    // rendering on phones). Tap-to-open below still works on touch.
-    if (isTouchPrimary) return;
-
     commitTranslate({
       x: dragState.current.originX + (e.clientX - dragState.current.startX),
       y: dragState.current.originY + (e.clientY - dragState.current.startY),
@@ -377,7 +372,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / STEP);
         setPendingCell({ x: cellX, y: cellY });
       }
-    } else if (!isTouchPrimary) {
+    } else {
       runPhysics();
     }
   };
@@ -385,7 +380,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const onPointerLeave = () => {
     if (!isDragging) return;
     setIsDragging(false);
-    if (!isTouchPrimary) runPhysics();
+    runPhysics();
   };
 
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
