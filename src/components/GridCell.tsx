@@ -7,12 +7,10 @@ function GridCell({
   x,
   y,
   cell,
-  isCentered,
 }: {
   x: number;
   y: number;
   cell: CellRow | undefined;
-  isCentered?: boolean;
 }) {
   const style: React.CSSProperties = {
     position: "absolute",
@@ -21,13 +19,12 @@ function GridCell({
     width: CELL_SIZE,
     height: CELL_SIZE,
   };
-  const centeredClass = isCentered ? " cell-pop-in" : "";
 
   if (!cell) {
     return (
       <div
         style={style}
-        className={`grid-cell flex items-center justify-center rounded-lg border border-dashed border-black/20 dark:border-white/25 bg-black/[0.03] dark:bg-white/[0.04] text-black/30 dark:text-white/35${centeredClass}`}
+        className="grid-cell flex items-center justify-center rounded-lg border border-dashed border-black/20 dark:border-white/25 bg-black/[0.03] dark:bg-white/[0.04] text-black/30 dark:text-white/35"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -48,7 +45,7 @@ function GridCell({
     return (
       <div
         style={style}
-        className={`grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5${centeredClass}`}
+        className="grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
       >
         <Image
           src={getPublicImageUrl(cell.image_path)}
@@ -65,7 +62,7 @@ function GridCell({
   return (
     <div
       style={style}
-      className={`grid-cell rounded-lg bg-black/5 dark:bg-white/5 p-3 overflow-hidden${centeredClass}`}
+      className="grid-cell rounded-lg bg-black/5 dark:bg-white/5 p-3 overflow-hidden"
     >
       <p className="text-sm leading-snug break-words line-clamp-[7] pointer-events-none">
         {cell.text_content}
