@@ -65,7 +65,7 @@ const MinimapRadar = forwardRef<MinimapRadarHandle, { dots: CellCoord[] }>(funct
         className="absolute inset-0 radar-sweep"
         style={{
           background:
-            "conic-gradient(from 0deg, rgba(59,130,246,0.35), transparent 40deg)",
+            "conic-gradient(from 0deg, transparent, rgba(59,130,246,0.35) 40deg)",
         }}
       />
 
