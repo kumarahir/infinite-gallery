@@ -49,7 +49,7 @@ function GridCell({
       <div
         style={style}
         className={`grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 ${
-          isOwn ? "border border-blue-500" : ""
+          isOwn ? "border-2 border-dotted border-blue-500" : ""
         }`}
       >
         <Image
