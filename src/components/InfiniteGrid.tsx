@@ -480,7 +480,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 pointer-events-none transition-opacity duration-200"
           style={{ opacity: isDragging ? 1 : 0 }}
         >
-          <MinimapRadar ref={minimapRef} dots={dotCoords} />
+          <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
         </div>
       )}
 
