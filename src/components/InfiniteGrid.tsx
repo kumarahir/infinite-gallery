@@ -415,7 +415,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           }}
         >
           {cellsInView.map(({ x, y, cell }) => (
-            <GridCell key={`${x}:${y}`} x={x} y={y} cell={cell} />
+            <GridCell key={`${x}:${y}`} x={x} y={y} cell={cell} currentUserId={user?.id} />
           ))}
         </div>
       </div>

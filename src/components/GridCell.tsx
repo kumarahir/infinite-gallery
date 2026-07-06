@@ -7,10 +7,12 @@ function GridCell({
   x,
   y,
   cell,
+  currentUserId,
 }: {
   x: number;
   y: number;
   cell: CellRow | undefined;
+  currentUserId?: string;
 }) {
   const style: React.CSSProperties = {
     position: "absolute",
@@ -42,10 +44,13 @@ function GridCell({
   }
 
   if (cell.cell_type === "image" && cell.image_path) {
+    const isOwn = !!currentUserId && cell.created_by === currentUserId;
     return (
       <div
         style={style}
-        className="grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
+        className={`grid-cell rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 ${
+          isOwn ? "border-2 border-blue-500" : ""
+        }`}
       >
         <Image
           src={getPublicImageUrl(cell.image_path)}
