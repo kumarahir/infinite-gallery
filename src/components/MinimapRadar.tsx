@@ -14,10 +14,10 @@ export interface MinimapRadarHandle {
 // transform update rather than doing any per-frame work of its own. Dot
 // positions are computed once per `dots` change (mirrors the number/rarity
 // of actual uploads, not pan events).
-const MinimapRadar = forwardRef<MinimapRadarHandle, { dots: CellCoord[] }>(function MinimapRadar(
-  { dots },
-  ref
-) {
+const MinimapRadar = forwardRef<
+  MinimapRadarHandle,
+  { dots: CellCoord[]; currentUserId?: string }
+>(function MinimapRadar({ dots, currentUserId }, ref) {
   const layerRef = useRef<HTMLDivElement>(null);
 
   useImperativeHandle(
@@ -39,8 +39,9 @@ const MinimapRadar = forwardRef<MinimapRadarHandle, { dots: CellCoord[] }>(funct
       dots.map((d) => ({
         left: d.x * STEP * MINIMAP_SCALE,
         top: d.y * STEP * MINIMAP_SCALE,
+        isOwn: !!currentUserId && d.created_by === currentUserId,
       })),
-    [dots]
+    [dots, currentUserId]
   );
 
   const diameter = MINIMAP_RADIUS_PX * 2;
@@ -54,7 +55,9 @@ const MinimapRadar = forwardRef<MinimapRadarHandle, { dots: CellCoord[] }>(funct
         {dotStyles.map((style, i) => (
           <div
             key={i}
-            className="absolute w-[2px] h-[2px] rounded-full bg-foreground/70"
+            className={`absolute w-[2px] h-[2px] rounded-full ${
+              style.isOwn ? "bg-blue-500" : "bg-foreground/70"
+            }`}
             style={{ left: style.left, top: style.top, transform: "translate(-50%, -50%)" }}
           />
         ))}

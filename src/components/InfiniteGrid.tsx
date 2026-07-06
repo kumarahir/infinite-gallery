@@ -249,7 +249,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     (cell: CellRow) => {
       addLocalCell(cell);
       if (cell.cell_type !== "image") return;
-      setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y }]);
+      setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y, created_by: cell.created_by }]);
       // Show the thank-you banner immediately (count fills in once known) —
       // the ViewCellModal that's about to render for this cell reads it.
       setCelebration({ x: cell.x, y: cell.y, total: null });
@@ -447,7 +447,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
               style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
             >
-              <MinimapRadar ref={minimapRef} dots={dotCoords} />
+              <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
             </div>
             <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
           </div>
