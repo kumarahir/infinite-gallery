@@ -50,5 +50,5 @@ body {
 }
 
 .radar-sweep {
-  animation: radar-sweep-spin 3s linear infinite;
+  animation: radar-sweep-spin 3s linear infinite reverse;
 }
