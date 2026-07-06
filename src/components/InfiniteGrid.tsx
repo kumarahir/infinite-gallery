@@ -475,6 +475,12 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       )}
 
+      {!isTouchPrimary && (
+        <div className="fixed bottom-8 right-8 z-40 pointer-events-none">
+          <MinimapRadar ref={minimapRef} dots={dotCoords} />
+        </div>
+      )}
+
       {isTouchPrimary && <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />}
 
       {pendingCell && (() => {
