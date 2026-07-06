@@ -476,7 +476,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       )}
 
       {!isTouchPrimary && (
-        <div className="fixed bottom-8 right-8 z-40 pointer-events-none">
+        <div
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 pointer-events-none transition-opacity duration-200"
+          style={{ opacity: isDragging ? 1 : 0 }}
+        >
           <MinimapRadar ref={minimapRef} dots={dotCoords} />
         </div>
       )}
