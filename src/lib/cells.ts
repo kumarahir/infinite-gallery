@@ -86,6 +86,34 @@ export async function fetchCellsInRange(
   return (data ?? []) as unknown as CellRow[];
 }
 
+export interface CellFilter {
+  onlyMine?: boolean;
+  themeId?: number | null;
+}
+
+// Backs the clustered/filtered browse mode — always image cells (themes and
+// "my sketches" both only make sense for images), ordered newest-first, no
+// pagination yet since the app's current scale makes a full fetch simplest.
+export async function fetchFilteredCells(filter: CellFilter, userId?: string): Promise<CellRow[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from("cells")
+    .select(CELL_SELECT)
+    .eq("cell_type", "image")
+    .order("created_at", { ascending: false });
+
+  if (filter.onlyMine && userId) {
+    query = query.eq("created_by", userId);
+  }
+  if (filter.themeId != null) {
+    query = query.eq("theme_id", filter.themeId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as unknown as CellRow[];
+}
+
 export class CellTakenError extends Error {
   constructor() {
     super("Someone just filled this cell.");

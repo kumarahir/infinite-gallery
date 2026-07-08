@@ -24,3 +24,8 @@ export const MOBILE_CONTROLS_HEIGHT = 144;
 export const MINIMAP_RADIUS_PX = 100;
 export const MINIMAP_WORLD_RADIUS_CELLS = 15;
 export const MINIMAP_SCALE = MINIMAP_RADIUS_PX / (MINIMAP_WORLD_RADIUS_CELLS * STEP);
+
+// Column count used to pack filtered/clustered browse results (e.g. "my
+// sketches", a theme) into a compact virtual grid starting at the origin,
+// instead of their real scattered world coordinates.
+export const FILTERED_GRID_COLS = 6;

@@ -8,6 +8,7 @@ import ViewCellModal from "./ViewCellModal";
 import Joystick from "./Joystick";
 import AboutModal from "./AboutModal";
 import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
+import FilterBar from "./FilterBar";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -15,6 +16,7 @@ import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
 import {
   BUFFER,
   CELL_SIZE,
+  FILTERED_GRID_COLS,
   JOYSTICK_MAX_SPEED,
   MOBILE_CONTROLS_HEIGHT,
   STEP,
@@ -23,9 +25,12 @@ import {
 import {
   fetchAllImageCoords,
   fetchCellAt,
+  fetchFilteredCells,
+  fetchThemes,
   fetchTotalImageCount,
   type CellCoord,
   type CellRow,
+  type Theme,
 } from "@/lib/cells";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
@@ -52,6 +57,17 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
   const [radarVisible, setRadarVisible] = useState(false);
   const minimapRef = useRef<MinimapRadarHandle>(null);
+
+  // Clustered/filtered browse mode — reuses the same pan mechanics and
+  // GridCell rendering as the real infinite canvas, just fed by a compact
+  // virtual layout of matching sketches instead of their real scattered
+  // world coordinates. View-only: no empty "+" cells, nothing to add into.
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [themeFilterId, setThemeFilterId] = useState<number | null>(null);
+  const [filteredCells, setFilteredCells] = useState<CellRow[]>([]);
+  const filterActive = onlyMine || themeFilterId != null;
+  const wasFilterActive = useRef(false);
 
   const dragState = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: 0 });
   const lastSample = useRef({ x: 0, y: 0, t: 0 });
@@ -174,6 +190,26 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       });
   }, []);
 
+  // Fetched once for the filter bar's theme dropdown.
+  useEffect(() => {
+    fetchThemes()
+      .then(setThemes)
+      .catch(() => {
+        // Filter bar just shows no theme options if this fails.
+      });
+  }, []);
+
+  // Re-fetch the clustered result set whenever the active filter changes.
+  useEffect(() => {
+    if (!filterActive) {
+      setFilteredCells([]);
+      return;
+    }
+    fetchFilteredCells({ onlyMine, themeId: themeFilterId }, user?.id)
+      .then(setFilteredCells)
+      .catch(() => setFilteredCells([]));
+  }, [filterActive, onlyMine, themeFilterId, user?.id]);
+
   // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid on it.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -229,9 +265,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, [translate, viewport]);
 
   useEffect(() => {
-    if (!range) return;
+    if (!range || filterActive) return;
     ensureRange(range.minX, range.maxX, range.minY, range.maxY);
-  }, [range, ensureRange]);
+  }, [range, ensureRange, filterActive]);
 
   const cellsInView = useMemo(() => {
     if (!range) return [];
@@ -244,6 +280,37 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, getCell, version]);
+
+  // Packs the filtered result set into a compact grid starting at the
+  // origin — no viewport windowing needed given the app's current scale, so
+  // every match is simply rendered, same as fetchAllImageCoords elsewhere.
+  const filteredCellMap = useMemo(() => {
+    const map = new Map<string, CellRow>();
+    filteredCells.forEach((cell, i) => {
+      const x = i % FILTERED_GRID_COLS;
+      const y = Math.floor(i / FILTERED_GRID_COLS);
+      map.set(`${x}:${y}`, cell);
+    });
+    return map;
+  }, [filteredCells]);
+
+  const filteredCellsInView = useMemo(
+    () =>
+      filteredCells.map((cell, i) => ({
+        x: i % FILTERED_GRID_COLS,
+        y: Math.floor(i / FILTERED_GRID_COLS),
+        cell,
+      })),
+    [filteredCells]
+  );
+
+  const activeCellsInView = filterActive ? filteredCellsInView : cellsInView;
+
+  const getActiveCell = useCallback(
+    (x: number, y: number) =>
+      filterActive ? filteredCellMap.get(`${x}:${y}`) : getCell(x, y),
+    [filterActive, filteredCellMap, getCell]
+  );
 
   const handleCellCreated = useCallback(
     (cell: CellRow) => {
@@ -266,6 +333,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     (x: number, y: number) => {
       removeLocalCell(x, y);
       setDotCoords((prev) => prev.filter((d) => d.x !== x || d.y !== y));
+      setFilteredCells((prev) => prev.filter((c) => c.x !== x || c.y !== y));
     },
     [removeLocalCell]
   );
@@ -319,6 +387,16 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       y: usableHeight / 2 - CELL_SIZE / 2,
     });
   }, [animateTranslateTo, isTouchPrimary]);
+
+  // Jump to the start of the clustered results as soon as a filter engages,
+  // rather than leaving the view wherever it happened to be panned to in
+  // the real gallery (which could be far from the compact virtual layout).
+  useEffect(() => {
+    if (filterActive && !wasFilterActive.current) {
+      handleRecenter();
+    }
+    wasFilterActive.current = filterActive;
+  }, [filterActive, handleRecenter]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     stopAnimation();
@@ -414,7 +492,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             willChange: "transform",
           }}
         >
-          {cellsInView.map(({ x, y, cell }) => (
+          {activeCellsInView.map(({ x, y, cell }) => (
             <GridCell key={`${x}:${y}`} x={x} y={y} cell={cell} currentUserId={user?.id} />
           ))}
         </div>
@@ -443,12 +521,14 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             </svg>
           </button>
           <div className="relative w-24 h-24 flex items-center justify-center">
-            <div
-              className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
-              style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
-            >
-              <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
-            </div>
+            {!filterActive && (
+              <div
+                className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
+                style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
+              >
+                <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
+              </div>
+            )}
             <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
           </div>
           <button
@@ -475,7 +555,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       )}
 
-      {!isTouchPrimary && (
+      {!isTouchPrimary && !filterActive && (
         <div
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 pointer-events-none transition-opacity duration-200"
           style={{ opacity: isDragging ? 1 : 0 }}
@@ -509,12 +589,36 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
       {isTouchPrimary && <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />}
 
+      <FilterBar
+        themes={themes}
+        onlyMine={onlyMine}
+        onOnlyMineChange={setOnlyMine}
+        themeId={themeFilterId}
+        onThemeIdChange={setThemeFilterId}
+        canFilterMine={!!user}
+        active={filterActive}
+        onClear={() => {
+          setOnlyMine(false);
+          setThemeFilterId(null);
+        }}
+      />
+
       {pendingCell && (() => {
-        const existing = getCell(pendingCell.x, pendingCell.y);
+        const existing = getActiveCell(pendingCell.x, pendingCell.y);
         const closeModal = () => {
           setPendingCell(null);
           setCelebration(null);
         };
+        if (filterActive) {
+          return existing ? (
+            <ViewCellModal
+              cell={existing}
+              isAdmin={isAdmin}
+              onClose={closeModal}
+              onDeleted={handleCellDeleted}
+            />
+          ) : null;
+        }
         return existing ? (
           <ViewCellModal
             cell={existing}
