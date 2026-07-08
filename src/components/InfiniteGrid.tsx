@@ -269,21 +269,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     ensureRange(range.minX, range.maxX, range.minY, range.maxY);
   }, [range, ensureRange, filterActive]);
 
-  const cellsInView = useMemo(() => {
-    if (!range) return [];
-    const items: { x: number; y: number; cell: CellRow | undefined }[] = [];
-    for (let x = range.minX; x <= range.maxX; x++) {
-      for (let y = range.minY; y <= range.maxY; y++) {
-        items.push({ x, y, cell: getCell(x, y) });
-      }
-    }
-    return items;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, getCell, version]);
-
   // Packs the filtered result set into a compact grid starting at the
-  // origin — no viewport windowing needed given the app's current scale, so
-  // every match is simply rendered, same as fetchAllImageCoords elsewhere.
+  // origin — no pagination needed given the app's current scale, so every
+  // match is simply laid out, same as fetchAllImageCoords elsewhere.
   const filteredCellMap = useMemo(() => {
     const map = new Map<string, CellRow>();
     filteredCells.forEach((cell, i) => {
@@ -294,23 +282,27 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     return map;
   }, [filteredCells]);
 
-  const filteredCellsInView = useMemo(
-    () =>
-      filteredCells.map((cell, i) => ({
-        x: i % FILTERED_GRID_COLS,
-        y: Math.floor(i / FILTERED_GRID_COLS),
-        cell,
-      })),
-    [filteredCells]
-  );
-
-  const activeCellsInView = filterActive ? filteredCellsInView : cellsInView;
-
   const getActiveCell = useCallback(
     (x: number, y: number) =>
       filterActive ? filteredCellMap.get(`${x}:${y}`) : getCell(x, y),
     [filterActive, filteredCellMap, getCell]
   );
+
+  // Same viewport-windowed iteration for both modes — getActiveCell just
+  // resolves against the virtual filtered layout instead of the real chunk
+  // cache when a filter is active, so empty cells still render (as blanks,
+  // via GridCell's readOnly prop) rather than only showing exact matches.
+  const cellsInView = useMemo(() => {
+    if (!range) return [];
+    const items: { x: number; y: number; cell: CellRow | undefined }[] = [];
+    for (let x = range.minX; x <= range.maxX; x++) {
+      for (let y = range.minY; y <= range.maxY; y++) {
+        items.push({ x, y, cell: getActiveCell(x, y) });
+      }
+    }
+    return items;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, getActiveCell, version]);
 
   const handleCellCreated = useCallback(
     (cell: CellRow) => {
@@ -492,8 +484,15 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             willChange: "transform",
           }}
         >
-          {activeCellsInView.map(({ x, y, cell }) => (
-            <GridCell key={`${x}:${y}`} x={x} y={y} cell={cell} currentUserId={user?.id} />
+          {cellsInView.map(({ x, y, cell }) => (
+            <GridCell
+              key={`${x}:${y}`}
+              x={x}
+              y={y}
+              cell={cell}
+              currentUserId={user?.id}
+              readOnly={filterActive}
+            />
           ))}
         </div>
       </div>
