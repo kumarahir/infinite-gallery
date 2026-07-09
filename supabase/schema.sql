@@ -293,3 +293,35 @@ alter policy "cells_insert_authenticated"
       ) < 5
     )
   );
+
+-- v1.7: let any signed-in user add social/website links to their own
+-- profile. Deliberately NOT a general self-update RLS policy — that would
+-- let a user set can_login/can_upload on themselves too, since RLS can't
+-- restrict which columns a row-level policy applies to. Instead, a
+-- security-definer function scoped to only these three columns, called via
+-- supabase.rpc(...), is the only way a user can touch their own row.
+alter table public.profiles
+  add column website_url text,
+  add column instagram_handle text,
+  add column twitter_handle text;
+
+create or replace function public.update_my_social_links(
+  p_website_url text,
+  p_instagram_handle text,
+  p_twitter_handle text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set website_url = p_website_url,
+      instagram_handle = p_instagram_handle,
+      twitter_handle = p_twitter_handle
+  where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.update_my_social_links(text, text, text) to authenticated;

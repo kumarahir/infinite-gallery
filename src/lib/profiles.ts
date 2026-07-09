@@ -6,6 +6,9 @@ export interface Profile {
   display_name: string | null;
   can_login: boolean;
   can_upload: boolean;
+  website_url: string | null;
+  instagram_handle: string | null;
+  twitter_handle: string | null;
 }
 
 export async function fetchProfiles(): Promise<Profile[]> {
@@ -39,6 +42,35 @@ export async function fetchCanUpload(userId: string): Promise<boolean> {
     .maybeSingle();
   if (error) throw error;
   return data?.can_upload ?? true;
+}
+
+export async function fetchMyProfile(userId: string): Promise<Profile | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Profile) ?? null;
+}
+
+// Routed through an RPC (not a direct table update) — profiles has no
+// general self-update RLS policy, since that would also let a user flip
+// their own can_login/can_upload. The RPC is scoped server-side to only
+// these three columns.
+export async function updateMySocialLinks(links: {
+  websiteUrl: string | null;
+  instagramHandle: string | null;
+  twitterHandle: string | null;
+}): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("update_my_social_links", {
+    p_website_url: links.websiteUrl,
+    p_instagram_handle: links.instagramHandle,
+    p_twitter_handle: links.twitterHandle,
+  });
+  if (error) throw error;
 }
 
 export async function fetchAdminEmails(): Promise<Set<string>> {

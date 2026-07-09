@@ -23,6 +23,25 @@ export default function AuthButton({ initialUser }: { initialUser: User | null }
     return (
       <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-full bg-background/90 backdrop-blur border border-black/10 dark:border-white/15 pl-3 pr-1 py-1 shadow-lg">
         <span className="text-sm truncate max-w-[140px]">{user.email}</span>
+        <Link
+          href="/profile"
+          aria-label="Your profile"
+          className="flex items-center justify-center w-7 h-7 rounded-full text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/10"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+        </Link>
         {isAdmin && (
           <Link
             href="/admin"
