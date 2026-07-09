@@ -325,3 +325,27 @@ end;
 $$;
 
 grant execute on function public.update_my_social_links(text, text, text) to authenticated;
+
+-- v1.8: let anyone viewing a sketch see its uploader's social/website
+-- links — the whole point of adding them. Not a public SELECT policy on
+-- profiles (that would also expose email/can_login/can_upload, which
+-- RLS can't hide on a per-column basis); instead a security-definer
+-- function that only ever returns these specific safe columns.
+create or replace function public.get_public_profile(p_user_id uuid)
+returns table (
+  display_name text,
+  website_url text,
+  instagram_handle text,
+  twitter_handle text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select display_name, website_url, instagram_handle, twitter_handle
+  from public.profiles
+  where id = p_user_id;
+$$;
+
+grant execute on function public.get_public_profile(uuid) to anon, authenticated;

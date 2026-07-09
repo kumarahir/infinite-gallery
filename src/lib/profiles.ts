@@ -73,6 +73,26 @@ export async function updateMySocialLinks(links: {
   if (error) throw error;
 }
 
+export interface PublicProfile {
+  display_name: string | null;
+  website_url: string | null;
+  instagram_handle: string | null;
+  twitter_handle: string | null;
+}
+
+// Routed through an RPC rather than selecting profiles directly — there's
+// no public SELECT policy on that table (it would also expose email and
+// can_login/can_upload), so this is the only way anyone other than the
+// profile's owner or an admin can see even these safe fields.
+export async function fetchPublicProfile(userId: string): Promise<PublicProfile | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .rpc("get_public_profile", { p_user_id: userId })
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PublicProfile) ?? null;
+}
+
 export async function fetchAdminEmails(): Promise<Set<string>> {
   const supabase = createClient();
   const { data, error } = await supabase.from("admins").select("email");

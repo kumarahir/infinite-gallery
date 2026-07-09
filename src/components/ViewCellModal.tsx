@@ -1,9 +1,86 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { deleteCell, getPublicImageUrl, type CellRow } from "@/lib/cells";
+import { fetchPublicProfile, type PublicProfile } from "@/lib/profiles";
 import ShareButton from "./ShareButton";
+
+function SocialLinks({ profile }: { profile: PublicProfile }) {
+  const links: { href: string; label: string; content: React.ReactNode }[] = [];
+
+  if (profile.website_url) {
+    links.push({
+      href: profile.website_url,
+      label: "Website",
+      content: (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-3.5 h-3.5"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M2 12h20" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      ),
+    });
+  }
+  if (profile.instagram_handle) {
+    links.push({
+      href: `https://instagram.com/${profile.instagram_handle}`,
+      label: "Instagram",
+      content: (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-3.5 h-3.5"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="5" />
+          <circle cx="12" cy="12" r="4" />
+          <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      ),
+    });
+  }
+  if (profile.twitter_handle) {
+    links.push({
+      href: `https://x.com/${profile.twitter_handle}`,
+      label: "X / Twitter",
+      content: <span className="text-[11px] font-bold leading-none">X</span>,
+    });
+  }
+
+  if (links.length === 0) return null;
+
+  return (
+    <span className="flex items-center gap-1">
+      {links.map((link) => (
+        <a
+          key={link.label}
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={link.label}
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center justify-center w-5 h-5 rounded-full bg-black/5 dark:bg-white/10 text-black/60 dark:text-white/60 hover:opacity-70"
+        >
+          {link.content}
+        </a>
+      ))}
+    </span>
+  );
+}
 
 export default function ViewCellModal({
   cell,
@@ -22,6 +99,16 @@ export default function ViewCellModal({
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [uploaderProfile, setUploaderProfile] = useState<PublicProfile | null>(null);
+
+  useEffect(() => {
+    if (cell.cell_type !== "image") return;
+    fetchPublicProfile(cell.created_by)
+      .then(setUploaderProfile)
+      .catch(() => {
+        // Social links just won't show if this fails.
+      });
+  }, [cell.cell_type, cell.created_by]);
 
   const remove = async () => {
     setRemoving(true);
@@ -79,7 +166,12 @@ export default function ViewCellModal({
 
         {cell.cell_type === "image" && (cell.created_by_name || cell.themes?.name) && (
           <div className="flex items-center justify-center gap-2 text-xs text-black/50 dark:text-white/50 text-center -mt-2">
-            {cell.created_by_name && <span>Uploaded by {cell.created_by_name}</span>}
+            {cell.created_by_name && (
+              <span className="flex items-center gap-1.5">
+                Uploaded by {cell.created_by_name}
+                {uploaderProfile && <SocialLinks profile={uploaderProfile} />}
+              </span>
+            )}
             {cell.themes?.name && (
               <span className="rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 font-medium">
                 {cell.themes.name}
