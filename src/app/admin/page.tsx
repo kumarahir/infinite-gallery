@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AdminThemesPanel from "@/components/AdminThemesPanel";
 import AdminUsersPanel from "@/components/AdminUsersPanel";
+import AdminBulkUploadPanel from "@/components/AdminBulkUploadPanel";
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -32,6 +33,11 @@ export default async function AdminPage() {
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Users</h2>
         <AdminUsersPanel />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Bulk upload</h2>
+        <AdminBulkUploadPanel />
       </div>
     </div>
   );

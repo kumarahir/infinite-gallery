@@ -191,6 +191,16 @@ export async function fetchAllImageCoords(): Promise<CellCoord[]> {
   return (data ?? []) as CellCoord[];
 }
 
+// All occupied coordinates (any cell type) — used by the admin bulk-upload
+// flow to pick random cells that are genuinely empty, within a bounding box
+// around existing content rather than the literal infinite grid.
+export async function fetchOccupiedCoords(): Promise<{ x: number; y: number }[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("cells").select("x, y");
+  if (error) throw error;
+  return (data ?? []) as { x: number; y: number }[];
+}
+
 export async function fetchTotalImageCount(): Promise<number> {
   const supabase = createClient();
   const { count, error } = await supabase
