@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchTotalImageCount } from "@/lib/cells";
 
@@ -75,6 +76,14 @@ export default function AboutModal({ open, onClose }: { open: boolean; onClose: 
               <li>Up to 5 images per person per day, to keep the gallery growing at a healthy pace for everyone. Text notes have no daily limit.</li>
             </ul>
           </div>
+
+          <Link
+            href="/changelog"
+            onClick={onClose}
+            className="text-sm font-medium underline text-black/70 dark:text-white/70 self-start"
+          >
+            Update log
+          </Link>
         </div>
 
         <button
