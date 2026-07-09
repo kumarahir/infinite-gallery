@@ -362,10 +362,7 @@ set created_by_name = 'kumar ahir'
 where cell_type = 'image' and created_by_name is null;
 
 -- v2.0: let admins pick which theme is pre-selected in the upload dropdown.
--- The partial unique index guarantees at most one row is ever the default,
--- so set_default_theme can safely flip it in a single statement (one UPDATE
--- touching every row at once — old default and new default settle in the
--- same statement, never both true at the same time).
+-- The partial unique index guarantees at most one row is ever the default.
 alter table public.themes add column is_default boolean not null default false;
 
 create unique index themes_single_default_idx
@@ -374,6 +371,13 @@ create unique index themes_single_default_idx
 
 update public.themes set is_default = true where name = 'Generic';
 
+-- Two statements, each with a real WHERE clause — Supabase blocks any
+-- UPDATE with no WHERE clause at all (a safeguard against accidental
+-- full-table writes), which a single `set is_default = (id = p_theme_id)`
+-- statement tripped. Splitting it is also safe with respect to the unique
+-- index above: each statement's end-state has at most one true row (zero
+-- after the first, exactly one after the second), and uniqueness is only
+-- checked at the end of each statement, not mid-statement.
 create or replace function public.set_default_theme(p_theme_id bigint)
 returns void
 language plpgsql
@@ -384,7 +388,8 @@ begin
   if not public.is_admin() then
     raise exception 'not authorized';
   end if;
-  update public.themes set is_default = (id = p_theme_id);
+  update public.themes set is_default = false where is_default = true and id <> p_theme_id;
+  update public.themes set is_default = true where id = p_theme_id;
 end;
 $$;
 
