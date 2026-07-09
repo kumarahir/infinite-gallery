@@ -66,7 +66,12 @@ export default function AdminThemesPanel() {
       await setDefaultTheme(theme.id);
       setThemes((prev) => prev.map((t) => ({ ...t, is_default: t.id === theme.id })));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to set default theme.";
+      // Supabase/PostgREST errors are plain objects with a `message` field,
+      // not real Error instances — instanceof Error misses them entirely.
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Failed to set default theme.";
       setError(message);
     } finally {
       setBusy(false);
