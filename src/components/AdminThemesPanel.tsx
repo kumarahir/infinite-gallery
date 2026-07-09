@@ -65,8 +65,9 @@ export default function AdminThemesPanel() {
     try {
       await setDefaultTheme(theme.id);
       setThemes((prev) => prev.map((t) => ({ ...t, is_default: t.id === theme.id })));
-    } catch {
-      setError("Failed to set default theme.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to set default theme.";
+      setError(message);
     } finally {
       setBusy(false);
     }
