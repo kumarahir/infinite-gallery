@@ -349,3 +349,14 @@ as $$
 $$;
 
 grant execute on function public.get_public_profile(uuid) to anon, authenticated;
+
+-- v1.9: one-time backfill for images uploaded before theme_id/
+-- created_by_name existed on cells — give them a sensible default rather
+-- than leaving them blank in the UI.
+update public.cells
+set theme_id = (select id from public.themes where name = 'Generic')
+where cell_type = 'image' and theme_id is null;
+
+update public.cells
+set created_by_name = 'kumar ahir'
+where cell_type = 'image' and created_by_name is null;
