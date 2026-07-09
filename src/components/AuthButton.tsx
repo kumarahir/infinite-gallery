@@ -22,7 +22,6 @@ export default function AuthButton({ initialUser }: { initialUser: User | null }
   if (user) {
     return (
       <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-full bg-background/90 backdrop-blur border border-black/10 dark:border-white/15 pl-3 pr-1 py-1 shadow-lg">
-        <span className="text-sm truncate max-w-[140px]">{user.email}</span>
         <Link
           href="/profile"
           aria-label="Your profile"
