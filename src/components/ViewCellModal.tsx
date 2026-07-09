@@ -140,6 +140,12 @@ export default function ViewCellModal({
           </p>
         )}
 
+        {cell.cell_type === "image" && cell.themes?.name && (
+          <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 text-xs font-medium text-black/50 dark:text-white/50">
+            {cell.themes.name}
+          </span>
+        )}
+
         {cell.cell_type === "image" && cell.image_path ? (
           <div className="relative flex items-center justify-center max-h-[70vh] overflow-hidden rounded-lg bg-black/5 dark:bg-white/5">
             {!imageLoaded && (
@@ -164,19 +170,12 @@ export default function ViewCellModal({
           </p>
         )}
 
-        {cell.cell_type === "image" && (cell.created_by_name || cell.themes?.name) && (
-          <div className="flex items-center justify-center gap-2 text-xs text-black/50 dark:text-white/50 text-center -mt-2">
-            {cell.created_by_name && (
-              <span className="flex items-center gap-1.5">
-                Uploaded by {cell.created_by_name}
-                {uploaderProfile && <SocialLinks profile={uploaderProfile} />}
-              </span>
-            )}
-            {cell.themes?.name && (
-              <span className="rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 font-medium">
-                {cell.themes.name}
-              </span>
-            )}
+        {cell.cell_type === "image" && cell.created_by_name && (
+          <div className="flex items-center justify-center text-xs text-black/50 dark:text-white/50 text-center -mt-2">
+            <span className="flex items-center gap-1.5">
+              Uploaded by {cell.created_by_name}
+              {uploaderProfile && <SocialLinks profile={uploaderProfile} />}
+            </span>
           </div>
         )}
 
