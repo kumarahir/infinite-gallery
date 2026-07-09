@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addTheme, fetchThemes, fetchUploadCountsByTheme, removeTheme, type Theme } from "@/lib/cells";
+import {
+  addTheme,
+  fetchThemes,
+  fetchUploadCountsByTheme,
+  removeTheme,
+  setDefaultTheme,
+  type Theme,
+} from "@/lib/cells";
 
 export default function AdminThemesPanel() {
   const [themes, setThemes] = useState<Theme[]>([]);
@@ -52,6 +59,19 @@ export default function AdminThemesPanel() {
     }
   };
 
+  const handleSetDefault = async (theme: Theme) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await setDefaultTheme(theme.id);
+      setThemes((prev) => prev.map((t) => ({ ...t, is_default: t.id === theme.id })));
+    } catch {
+      setError("Failed to set default theme.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={handleAdd} className="flex gap-2">
@@ -87,15 +107,32 @@ export default function AdminThemesPanel() {
                 <span className="text-black/40 dark:text-white/40">
                   ({counts.get(theme.id) ?? 0})
                 </span>
+                {theme.is_default && (
+                  <span className="ml-2 rounded-full bg-black/5 dark:bg-white/10 px-2 py-0.5 text-xs font-medium text-black/50 dark:text-white/50">
+                    Default
+                  </span>
+                )}
               </span>
-              <button
-                type="button"
-                onClick={() => handleRemove(theme)}
-                disabled={busy}
-                className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
-              >
-                Remove
-              </button>
+              <div className="flex items-center gap-3">
+                {!theme.is_default && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetDefault(theme)}
+                    disabled={busy}
+                    className="text-xs font-medium text-black/50 dark:text-white/50 hover:opacity-70 disabled:opacity-40"
+                  >
+                    Set as default
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(theme)}
+                  disabled={busy}
+                  className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
+                >
+                  Remove
+                </button>
+              </div>
             </li>
           ))}
         </ul>

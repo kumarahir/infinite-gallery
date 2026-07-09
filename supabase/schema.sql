@@ -360,3 +360,32 @@ where cell_type = 'image' and theme_id is null;
 update public.cells
 set created_by_name = 'kumar ahir'
 where cell_type = 'image' and created_by_name is null;
+
+-- v2.0: let admins pick which theme is pre-selected in the upload dropdown.
+-- The partial unique index guarantees at most one row is ever the default,
+-- so set_default_theme can safely flip it in a single statement (one UPDATE
+-- touching every row at once — old default and new default settle in the
+-- same statement, never both true at the same time).
+alter table public.themes add column is_default boolean not null default false;
+
+create unique index themes_single_default_idx
+  on public.themes (is_default)
+  where is_default;
+
+update public.themes set is_default = true where name = 'Generic';
+
+create or replace function public.set_default_theme(p_theme_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not authorized';
+  end if;
+  update public.themes set is_default = (id = p_theme_id);
+end;
+$$;
+
+grant execute on function public.set_default_theme(bigint) to authenticated;

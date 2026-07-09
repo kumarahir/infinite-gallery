@@ -20,6 +20,7 @@ export interface CellRow {
 export interface Theme {
   id: number;
   name: string;
+  is_default: boolean;
 }
 
 const BUCKET = "cells-images";
@@ -42,6 +43,15 @@ export async function addTheme(name: string): Promise<Theme> {
 export async function removeTheme(id: number): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase.from("themes").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Routed through an RPC — the function flips is_default on every row in one
+// statement so exactly one theme is ever the default, and re-checks
+// is_admin() server-side regardless of what the calling UI restricts to.
+export async function setDefaultTheme(id: number): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("set_default_theme", { p_theme_id: id });
   if (error) throw error;
 }
 

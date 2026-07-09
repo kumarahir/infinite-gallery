@@ -88,8 +88,8 @@ export default function AddCellModal({
     fetchThemes()
       .then((list) => {
         setThemes(list);
-        const generic = list.find((t) => t.name === "Generic");
-        setThemeId(generic?.id ?? list[0]?.id ?? null);
+        const defaultTheme = list.find((t) => t.is_default);
+        setThemeId(defaultTheme?.id ?? list[0]?.id ?? null);
       })
       .catch(() => {
         // Leave themes empty — the submit button stays disabled in that case.
