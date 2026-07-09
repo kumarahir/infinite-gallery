@@ -3,34 +3,28 @@
 import { useState } from "react";
 import type { Theme } from "@/lib/cells";
 
+// Icon-only, meant to sit inline in the main controls row alongside
+// recenter/joystick/about — the theme panel opens upward above it, same
+// convention as the minimap opening above the joystick.
 export default function FilterBar({
   themes,
-  onlyMine,
-  onOnlyMineChange,
   themeId,
   onThemeIdChange,
-  canFilterMine,
-  active,
-  onClear,
 }: {
   themes: Theme[];
-  onlyMine: boolean;
-  onOnlyMineChange: (value: boolean) => void;
   themeId: number | null;
   onThemeIdChange: (value: number | null) => void;
-  canFilterMine: boolean;
-  active: boolean;
-  onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const active = themeId != null;
 
   return (
-    <div className="fixed top-4 left-4 z-40">
+    <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Filter gallery"
-        className={`flex items-center gap-2 h-10 px-3 rounded-full backdrop-blur border text-sm font-medium ${
+        aria-label="Filter by theme"
+        className={`flex items-center justify-center w-10 h-10 rounded-full backdrop-blur border ${
           active
             ? "bg-blue-500 border-blue-500 text-white"
             : "bg-black/20 dark:bg-white/10 border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
@@ -44,31 +38,19 @@ export default function FilterBar({
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="w-4 h-4"
+          className="w-5 h-5"
         >
           <path d="M4 5h16" />
           <path d="M7 12h10" />
           <path d="M10 19h4" />
         </svg>
-        {active ? "Filtered" : "Filter"}
       </button>
 
       {open && (
-        <div className="mt-2 w-64 rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-4 flex flex-col gap-3">
-          <label className="flex items-center justify-between gap-2 text-sm">
-            <span>My sketches only</span>
-            <input
-              type="checkbox"
-              checked={onlyMine}
-              disabled={!canFilterMine}
-              onChange={(e) => onOnlyMineChange(e.target.checked)}
-              className="w-4 h-4 disabled:opacity-40"
-            />
-          </label>
-          {!canFilterMine && (
-            <p className="-mt-2 text-xs text-black/45 dark:text-white/45">Sign in to filter your own sketches.</p>
-          )}
-
+        <div
+          className="absolute left-1/2 -translate-x-1/2 w-56 rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-4 flex flex-col gap-3"
+          style={{ bottom: "calc(100% + 12px)" }}
+        >
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-black/60 dark:text-white/60">Theme</span>
             <select
@@ -88,10 +70,10 @@ export default function FilterBar({
           {active && (
             <button
               type="button"
-              onClick={onClear}
+              onClick={() => onThemeIdChange(null)}
               className="text-sm text-black/50 dark:text-white/50 hover:opacity-70 self-start"
             >
-              Clear filters
+              Clear theme
             </button>
           )}
         </div>
