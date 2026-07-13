@@ -31,7 +31,7 @@ export const MINIMAP_SCALE = MINIMAP_RADIUS_PX / (MINIMAP_WORLD_RADIUS_CELLS * S
 export const FILTERED_GRID_COLS = 6;
 
 // Discrete thumbnail zoom steps, as a multiplier of the normal CELL_SIZE —
-// two steps down (each halving) and two up (each doubling), from normal
-// (index 2) at the center. Changed via the zoom in/out buttons.
-export const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4];
-export const DEFAULT_ZOOM_INDEX = 2;
+// one step down (halving) and one up (doubling), from normal (index 1) at
+// the center. Changed via the zoom in/out buttons.
+export const ZOOM_LEVELS = [0.5, 1, 2];
+export const DEFAULT_ZOOM_INDEX = 1;
