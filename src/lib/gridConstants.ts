@@ -32,10 +32,6 @@ export const FILTERED_GRID_COLS = 6;
 
 // Discrete thumbnail zoom steps, as a multiplier of the normal CELL_SIZE —
 // two steps down (each halving) and two up (each doubling), from normal
-// (index 2) at the center.
+// (index 2) at the center. Changed via the zoom in/out buttons.
 export const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4];
 export const DEFAULT_ZOOM_INDEX = 2;
-
-// How far a two-finger pinch has to spread/pinch (as a distance ratio since
-// the last step) before it counts as one more zoom step in or out.
-export const PINCH_STEP_RATIO = 1.3;

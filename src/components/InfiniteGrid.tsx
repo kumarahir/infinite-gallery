@@ -22,7 +22,6 @@ import {
   GAP,
   JOYSTICK_MAX_SPEED,
   MOBILE_CONTROLS_HEIGHT,
-  PINCH_STEP_RATIO,
   TAP_THRESHOLD,
   ZOOM_LEVELS,
 } from "@/lib/gridConstants";
@@ -62,9 +61,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [radarVisible, setRadarVisible] = useState(false);
   const minimapRef = useRef<MinimapRadarHandle>(null);
 
-  // Discrete thumbnail zoom, changed via a two-finger pinch. cellStep is
-  // named distinctly from the rAF-callback `step` params used elsewhere in
-  // this file (runPhysics/animateTranslateTo) to avoid confusion.
+  // Discrete thumbnail zoom, changed via the +/- buttons. cellStep is named
+  // distinctly from the rAF-callback `step` params used elsewhere in this
+  // file (runPhysics/animateTranslateTo) to avoid confusion.
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const zoomLevel = ZOOM_LEVELS[zoomIndex];
   const cellSize = CELL_SIZE * zoomLevel;
@@ -86,13 +85,6 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const velocity = useRef({ x: 0, y: 0 });
   const rafId = useRef<number | null>(null);
   const lastFrameTime = useRef<number | null>(null);
-
-  // Two-finger pinch tracking — keyed by pointerId so either finger can
-  // move independently. pinchStartDistance is the reference distance for
-  // detecting the *next* step crossing, reset every time a step fires so a
-  // continued pinch can trigger multiple steps.
-  const activePointers = useRef(new Map<number, { x: number; y: number }>());
-  const pinchStartDistance = useRef<number | null>(null);
 
   // Joystick input (mobile only) — a normalized -1..1 direction vector,
   // driven directly at JOYSTICK_MAX_SPEED while held. Releasing it just
@@ -400,9 +392,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, [animateTranslateTo, isTouchPrimary, cellSize]);
 
   // Changes the discrete zoom step, keeping whichever world point sits
-  // under `anchor` (container-relative px — the pinch midpoint, or the
-  // cursor for ctrl+wheel) visually stable rather than re-centering on
-  // the origin.
+  // under `anchor` (container-relative px — the zoom button click passes
+  // the container's own center) visually stable rather than re-centering
+  // on the origin.
   const handleZoomStep = useCallback(
     (direction: 1 | -1, anchor: { x: number; y: number }) => {
       setZoomIndex((prevIndex) => {
@@ -421,6 +413,19 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [commitTranslate]
   );
 
+  // Zoom buttons anchor on the container's own center rather than a
+  // gesture midpoint.
+  const zoomAtCenter = useCallback(
+    (direction: 1 | -1) => {
+      if (!containerRef.current) return;
+      handleZoomStep(direction, {
+        x: containerRef.current.clientWidth / 2,
+        y: containerRef.current.clientHeight / 2,
+      });
+    },
+    [handleZoomStep]
+  );
+
   // Jump to the start of the clustered results as soon as a filter engages,
   // rather than leaving the view wherever it happened to be panned to in
   // the real gallery (which could be far from the compact virtual layout).
@@ -431,39 +436,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     wasFilterActive.current = filterActive;
   }, [filterActive, handleRecenter]);
 
-  const pinchDistance = () => {
-    const pts = [...activePointers.current.values()];
-    if (pts.length < 2) return null;
-    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-  };
-
-  const pinchMidpointRelative = () => {
-    const pts = [...activePointers.current.values()];
-    const rect = containerRef.current!.getBoundingClientRect();
-    return {
-      x: (pts[0].x + pts[1].x) / 2 - rect.left,
-      y: (pts[0].y + pts[1].y) / 2 - rect.top,
-    };
-  };
-
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Some pointer types/environments reject capture — dragging still
-      // works via document-level pointermove/up, just without capture.
-    }
-
-    if (activePointers.current.size >= 2) {
-      // A second finger just landed — switch from panning to pinch-zoom.
-      stopAnimation();
-      velocity.current = { x: 0, y: 0 };
-      setIsDragging(false);
-      pinchStartDistance.current = pinchDistance();
-      return;
-    }
-
     stopAnimation();
     velocity.current = { x: 0, y: 0 };
     setIsDragging(true);
@@ -475,27 +448,15 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       moved: 0,
     };
     lastSample.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some pointer types/environments reject capture — dragging still
+      // works via document-level pointermove/up, just without capture.
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointers.current.has(e.pointerId)) {
-      activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    if (activePointers.current.size >= 2) {
-      const dist = pinchDistance();
-      if (dist == null || pinchStartDistance.current == null) return;
-      const ratio = dist / pinchStartDistance.current;
-      if (ratio >= PINCH_STEP_RATIO) {
-        handleZoomStep(1, pinchMidpointRelative());
-        pinchStartDistance.current = dist;
-      } else if (ratio <= 1 / PINCH_STEP_RATIO) {
-        handleZoomStep(-1, pinchMidpointRelative());
-        pinchStartDistance.current = dist;
-      }
-      return;
-    }
-
     if (!isDragging) return;
     const now = performance.now();
     const dt = Math.max(now - lastSample.current.t, 1);
@@ -516,12 +477,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     });
   };
 
-  const endPointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    activePointers.current.delete(e.pointerId);
-    if (activePointers.current.size < 2) {
-      pinchStartDistance.current = null;
-    }
-
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDragging) return;
     setIsDragging(false);
 
@@ -537,11 +493,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     }
   };
 
-  const onPointerLeave = (e: React.PointerEvent<HTMLDivElement>) => {
-    activePointers.current.delete(e.pointerId);
-    if (activePointers.current.size < 2) {
-      pinchStartDistance.current = null;
-    }
+  const onPointerLeave = () => {
     if (!isDragging) return;
     setIsDragging(false);
     runPhysics();
@@ -566,8 +518,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         }`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={endPointer}
-        onPointerCancel={endPointer}
+        onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
         onWheel={onWheel}
       >
@@ -620,6 +571,44 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           {user && (
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
           )}
+          <button
+            type="button"
+            onClick={() => zoomAtCenter(-1)}
+            disabled={zoomIndex === 0}
+            aria-label="Decrease thumbnail size"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="w-5 h-5"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomAtCenter(1)}
+            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+            aria-label="Increase thumbnail size"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="w-5 h-5"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
           <div className="relative w-24 h-24 flex items-center justify-center">
             {!filterActive && (
               <div
@@ -690,6 +679,44 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           {user && (
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
           )}
+          <button
+            type="button"
+            onClick={() => zoomAtCenter(-1)}
+            disabled={zoomIndex === 0}
+            aria-label="Decrease thumbnail size"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="w-5 h-5"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomAtCenter(1)}
+            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+            aria-label="Increase thumbnail size"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="w-5 h-5"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </div>
       )}
 
