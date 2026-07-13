@@ -17,11 +17,14 @@ import { useIsTouchPrimary } from "@/hooks/useIsTouchPrimary";
 import {
   BUFFER,
   CELL_SIZE,
+  DEFAULT_ZOOM_INDEX,
   FILTERED_GRID_COLS,
+  GAP,
   JOYSTICK_MAX_SPEED,
   MOBILE_CONTROLS_HEIGHT,
-  STEP,
+  PINCH_STEP_RATIO,
   TAP_THRESHOLD,
+  ZOOM_LEVELS,
 } from "@/lib/gridConstants";
 import {
   fetchAllImageCoords,
@@ -59,6 +62,14 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [radarVisible, setRadarVisible] = useState(false);
   const minimapRef = useRef<MinimapRadarHandle>(null);
 
+  // Discrete thumbnail zoom, changed via a two-finger pinch. cellStep is
+  // named distinctly from the rAF-callback `step` params used elsewhere in
+  // this file (runPhysics/animateTranslateTo) to avoid confusion.
+  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
+  const zoomLevel = ZOOM_LEVELS[zoomIndex];
+  const cellSize = CELL_SIZE * zoomLevel;
+  const cellStep = cellSize + GAP * zoomLevel;
+
   // Clustered/filtered browse mode — reuses the same pan mechanics and
   // GridCell rendering as the real infinite canvas, just fed by a compact
   // virtual layout of matching sketches instead of their real scattered
@@ -75,6 +86,13 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const velocity = useRef({ x: 0, y: 0 });
   const rafId = useRef<number | null>(null);
   const lastFrameTime = useRef<number | null>(null);
+
+  // Two-finger pinch tracking — keyed by pointerId so either finger can
+  // move independently. pinchStartDistance is the reference distance for
+  // detecting the *next* step crossing, reset every time a step fires so a
+  // continued pinch can trigger multiple steps.
+  const activePointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchStartDistance = useRef<number | null>(null);
 
   // Joystick input (mobile only) — a normalized -1..1 direction vector,
   // driven directly at JOYSTICK_MAX_SPEED while held. Releasing it just
@@ -229,8 +247,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       if (cell) addLocalCell(cell);
       setPendingCell({ x, y });
       commitTranslate({
-        x: containerRef.current!.clientWidth / 2 - x * STEP - CELL_SIZE / 2,
-        y: containerRef.current!.clientHeight / 2 - y * STEP - CELL_SIZE / 2,
+        x: containerRef.current!.clientWidth / 2 - x * cellStep - cellSize / 2,
+        y: containerRef.current!.clientHeight / 2 - y * cellStep - cellSize / 2,
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,10 +268,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
   useEffect(() => {
     if (viewport.width === 0 && viewport.height === 0) return;
-    const minX = Math.floor(-translate.x / STEP) - BUFFER;
-    const maxX = Math.ceil((-translate.x + viewport.width) / STEP) + BUFFER;
-    const minY = Math.floor(-translate.y / STEP) - BUFFER;
-    const maxY = Math.ceil((-translate.y + viewport.height) / STEP) + BUFFER;
+    const minX = Math.floor(-translate.x / cellStep) - BUFFER;
+    const maxX = Math.ceil((-translate.x + viewport.width) / cellStep) + BUFFER;
+    const minY = Math.floor(-translate.y / cellStep) - BUFFER;
+    const maxY = Math.ceil((-translate.y + viewport.height) / cellStep) + BUFFER;
     setRange((prev) =>
       prev &&
       prev.minX === minX &&
@@ -263,7 +281,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         ? prev
         : { minX, maxX, minY, maxY }
     );
-  }, [translate, viewport]);
+  }, [translate, viewport, cellStep]);
 
   useEffect(() => {
     if (!range || filterActive) return;
@@ -376,10 +394,32 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       ? containerRef.current.clientHeight - MOBILE_CONTROLS_HEIGHT
       : containerRef.current.clientHeight;
     animateTranslateTo({
-      x: containerRef.current.clientWidth / 2 - CELL_SIZE / 2,
-      y: usableHeight / 2 - CELL_SIZE / 2,
+      x: containerRef.current.clientWidth / 2 - cellSize / 2,
+      y: usableHeight / 2 - cellSize / 2,
     });
-  }, [animateTranslateTo, isTouchPrimary]);
+  }, [animateTranslateTo, isTouchPrimary, cellSize]);
+
+  // Changes the discrete zoom step, keeping whichever world point sits
+  // under `anchor` (container-relative px — the pinch midpoint, or the
+  // cursor for ctrl+wheel) visually stable rather than re-centering on
+  // the origin.
+  const handleZoomStep = useCallback(
+    (direction: 1 | -1, anchor: { x: number; y: number }) => {
+      setZoomIndex((prevIndex) => {
+        const nextIndex = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, prevIndex + direction));
+        if (nextIndex === prevIndex) return prevIndex;
+        const oldStep = CELL_SIZE * ZOOM_LEVELS[prevIndex] + GAP * ZOOM_LEVELS[prevIndex];
+        const newStep = CELL_SIZE * ZOOM_LEVELS[nextIndex] + GAP * ZOOM_LEVELS[nextIndex];
+        const ratio = newStep / oldStep;
+        commitTranslate({
+          x: anchor.x - (anchor.x - translateRef.current.x) * ratio,
+          y: anchor.y - (anchor.y - translateRef.current.y) * ratio,
+        });
+        return nextIndex;
+      });
+    },
+    [commitTranslate]
+  );
 
   // Jump to the start of the clustered results as soon as a filter engages,
   // rather than leaving the view wherever it happened to be panned to in
@@ -391,7 +431,39 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     wasFilterActive.current = filterActive;
   }, [filterActive, handleRecenter]);
 
+  const pinchDistance = () => {
+    const pts = [...activePointers.current.values()];
+    if (pts.length < 2) return null;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  };
+
+  const pinchMidpointRelative = () => {
+    const pts = [...activePointers.current.values()];
+    const rect = containerRef.current!.getBoundingClientRect();
+    return {
+      x: (pts[0].x + pts[1].x) / 2 - rect.left,
+      y: (pts[0].y + pts[1].y) / 2 - rect.top,
+    };
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some pointer types/environments reject capture — dragging still
+      // works via document-level pointermove/up, just without capture.
+    }
+
+    if (activePointers.current.size >= 2) {
+      // A second finger just landed — switch from panning to pinch-zoom.
+      stopAnimation();
+      velocity.current = { x: 0, y: 0 };
+      setIsDragging(false);
+      pinchStartDistance.current = pinchDistance();
+      return;
+    }
+
     stopAnimation();
     velocity.current = { x: 0, y: 0 };
     setIsDragging(true);
@@ -403,15 +475,27 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       moved: 0,
     };
     lastSample.current = { x: e.clientX, y: e.clientY, t: performance.now() };
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Some pointer types/environments reject capture — dragging still
-      // works via document-level pointermove/up, just without capture.
-    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointers.current.has(e.pointerId)) {
+      activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (activePointers.current.size >= 2) {
+      const dist = pinchDistance();
+      if (dist == null || pinchStartDistance.current == null) return;
+      const ratio = dist / pinchStartDistance.current;
+      if (ratio >= PINCH_STEP_RATIO) {
+        handleZoomStep(1, pinchMidpointRelative());
+        pinchStartDistance.current = dist;
+      } else if (ratio <= 1 / PINCH_STEP_RATIO) {
+        handleZoomStep(-1, pinchMidpointRelative());
+        pinchStartDistance.current = dist;
+      }
+      return;
+    }
+
     if (!isDragging) return;
     const now = performance.now();
     const dt = Math.max(now - lastSample.current.t, 1);
@@ -432,15 +516,20 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     });
   };
 
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const endPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) {
+      pinchStartDistance.current = null;
+    }
+
     if (!isDragging) return;
     setIsDragging(false);
 
     if (dragState.current.moved < TAP_THRESHOLD) {
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
-        const cellX = Math.floor((e.clientX - rect.left - translateRef.current.x) / STEP);
-        const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / STEP);
+        const cellX = Math.floor((e.clientX - rect.left - translateRef.current.x) / cellStep);
+        const cellY = Math.floor((e.clientY - rect.top - translateRef.current.y) / cellStep);
         setPendingCell({ x: cellX, y: cellY });
       }
     } else {
@@ -448,7 +537,11 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     }
   };
 
-  const onPointerLeave = () => {
+  const onPointerLeave = (e: React.PointerEvent<HTMLDivElement>) => {
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) {
+      pinchStartDistance.current = null;
+    }
     if (!isDragging) return;
     setIsDragging(false);
     runPhysics();
@@ -473,7 +566,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         }`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
         onPointerLeave={onPointerLeave}
         onWheel={onWheel}
       >
@@ -493,6 +587,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               cell={cell}
               currentUserId={user?.id}
               readOnly={filterActive}
+              cellSize={cellSize}
+              step={cellStep}
             />
           ))}
         </div>

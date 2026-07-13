@@ -1,6 +1,5 @@
 import { memo } from "react";
 import Image from "next/image";
-import { CELL_SIZE, STEP } from "@/lib/gridConstants";
 import { getPublicImageUrl, type CellRow } from "@/lib/cells";
 
 function GridCell({
@@ -9,19 +8,23 @@ function GridCell({
   cell,
   currentUserId,
   readOnly,
+  cellSize,
+  step,
 }: {
   x: number;
   y: number;
   cell: CellRow | undefined;
   currentUserId?: string;
   readOnly?: boolean;
+  cellSize: number;
+  step: number;
 }) {
   const style: React.CSSProperties = {
     position: "absolute",
-    left: x * STEP,
-    top: y * STEP,
-    width: CELL_SIZE,
-    height: CELL_SIZE,
+    left: x * step,
+    top: y * step,
+    width: cellSize,
+    height: cellSize,
   };
 
   if (!cell) {
@@ -59,8 +62,8 @@ function GridCell({
         <Image
           src={getPublicImageUrl(cell.image_path)}
           alt=""
-          width={cell.image_width ?? CELL_SIZE}
-          height={cell.image_height ?? CELL_SIZE}
+          width={cell.image_width ?? cellSize}
+          height={cell.image_height ?? cellSize}
           draggable={false}
           className="w-full h-full object-cover pointer-events-none"
         />
