@@ -221,7 +221,12 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       .catch(() => setFilteredCells([]));
   }, [filterActive, onlyMine, themeFilterId, user?.id]);
 
-  // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid on it.
+  // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid
+  // on it. Parsed once on mount (and stripped from the URL immediately);
+  // the actual centering is deferred to a separate effect below.
+  const deepLinkCell = useRef<{ x: number; y: number } | null>(null);
+  const deepLinkHandled = useRef(false);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const raw = params.get("cell");
@@ -234,17 +239,35 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     const x = Number(xStr);
     const y = Number(yStr);
     if (!Number.isInteger(x) || !Number.isInteger(y)) return;
+    deepLinkCell.current = { x, y };
+  }, []);
+
+  // Waits for `viewport` (populated by the ResizeObserver above) to report a
+  // real, non-zero size before centering — reading containerRef's
+  // clientWidth/clientHeight directly at mount time is racy and can still
+  // be 0 before the first layout pass, silently pinning the view at the
+  // top-left corner instead of centering on the shared cell.
+  useEffect(() => {
+    if (deepLinkHandled.current || !deepLinkCell.current) return;
+    if (viewport.width === 0 && viewport.height === 0) return;
+    deepLinkHandled.current = true;
+    const { x, y } = deepLinkCell.current;
 
     fetchCellAt(x, y).then((cell) => {
       if (cell) addLocalCell(cell);
       setPendingCell({ x, y });
+      // Center within the space above the mobile controls row, not the
+      // literal screen center (which those controls would cover) — same
+      // usableHeight adjustment as handleRecenter.
+      const usableHeight = isTouchPrimary
+        ? viewport.height - MOBILE_CONTROLS_HEIGHT
+        : viewport.height;
       commitTranslate({
-        x: containerRef.current!.clientWidth / 2 - x * cellStep - cellSize / 2,
-        y: containerRef.current!.clientHeight / 2 - y * cellStep - cellSize / 2,
+        x: viewport.width / 2 - x * cellStep - cellSize / 2,
+        y: usableHeight / 2 - y * cellStep - cellSize / 2,
       });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [viewport, isTouchPrimary, cellStep, cellSize, addLocalCell, commitTranslate]);
 
   // Only produces a NEW range object when the visible cell window actually
   // shifts (roughly once per STEP px of movement) rather than on every
