@@ -10,6 +10,7 @@ import AboutModal from "./AboutModal";
 import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
 import FilterBar from "./FilterBar";
 import MineToggleButton from "./MineToggleButton";
+import MobileToolsDrawer from "./MobileToolsDrawer";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -52,6 +53,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [isDragging, setIsDragging] = useState(false);
   const [pendingCell, setPendingCell] = useState<{ x: number; y: number } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  // Mobile-only bottom sheet holding the filter/mine/size-toggle controls,
+  // out of the main joystick/recenter row.
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [celebration, setCelebration] = useState<{
     x: number;
     y: number;
@@ -620,14 +624,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
             </svg>
           </button>
-          <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
-          {user && (
-            <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
-          )}
           <button
             type="button"
-            onClick={toggleZoom}
-            aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
+            onClick={() => setToolsOpen((v) => !v)}
+            aria-label={toolsOpen ? "Hide gallery tools" : "Show gallery tools"}
             className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
           >
             <svg
@@ -637,10 +637,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               stroke="currentColor"
               strokeWidth={2}
               strokeLinecap="round"
+              strokeLinejoin="round"
               className="w-5 h-5"
             >
-              <path d="M5 12h14" />
-              {isZoomedOut && <path d="M12 5v14" />}
+              {toolsOpen ? <path d="m6 9 6 6 6-6" /> : <path d="m18 15-6-6-6 6" />}
             </svg>
           </button>
           <div className="relative w-24 h-24 flex items-center justify-center">
@@ -676,6 +676,34 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             </svg>
           </button>
         </div>
+      )}
+
+      {isTouchPrimary && (
+        <MobileToolsDrawer open={toolsOpen}>
+          <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
+          {user && (
+            <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
+          )}
+          <button
+            type="button"
+            onClick={toggleZoom}
+            aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="w-5 h-5"
+            >
+              <path d="M5 12h14" />
+              {isZoomedOut && <path d="M12 5v14" />}
+            </svg>
+          </button>
+        </MobileToolsDrawer>
       )}
 
       {!isTouchPrimary && !filterActive && (
