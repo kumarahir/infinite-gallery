@@ -603,107 +603,107 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       </div>
 
       {isTouchPrimary && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleRecenter}
-            aria-label="Recenter gallery"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-5 h-5"
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleRecenter}
+              aria-label="Recenter gallery"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
             >
-              <path d="M3 11.5 12 4l9 7.5" />
-              <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => setToolsOpen((v) => !v)}
-            aria-label={toolsOpen ? "Hide gallery tools" : "Show gallery tools"}
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-5 h-5"
-            >
-              {toolsOpen ? <path d="m6 9 6 6 6-6" /> : <path d="m18 15-6-6-6 6" />}
-            </svg>
-          </button>
-          <div className="relative w-24 h-24 flex items-center justify-center">
-            {!filterActive && (
-              <div
-                className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
-                style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-5 h-5"
               >
-                <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
-              </div>
-            )}
-            <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
+                <path d="M3 11.5 12 4l9 7.5" />
+                <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
+              </svg>
+            </button>
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              {!filterActive && (
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
+                  style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
+                >
+                  <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
+                </div>
+              )}
+              <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setToolsOpen((v) => !v)}
+              aria-label={toolsOpen ? "Hide gallery tools" : "Show gallery tools"}
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-5 h-5"
+              >
+                {toolsOpen ? <path d="m6 9 6 6 6-6" /> : <path d="m18 15-6-6-6 6" />}
+              </svg>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setAboutOpen(true)}
-            aria-label="About this gallery"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-5 h-5"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4" />
-              <path d="M12 8h.01" />
-            </svg>
-          </button>
-        </div>
-      )}
 
-      {isTouchPrimary && (
-        <MobileToolsDrawer open={toolsOpen}>
-          <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
-          {user && (
-            <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
-          )}
-          <button
-            type="button"
-            onClick={toggleZoom}
-            aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="w-5 h-5"
+          <MobileToolsDrawer open={toolsOpen}>
+            <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
+            {user && (
+              <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
+            )}
+            <button
+              type="button"
+              onClick={toggleZoom}
+              aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
             >
-              <path d="M5 12h14" />
-              {isZoomedOut && <path d="M12 5v14" />}
-            </svg>
-          </button>
-        </MobileToolsDrawer>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                className="w-5 h-5"
+              >
+                <path d="M5 12h14" />
+                {isZoomedOut && <path d="M12 5v14" />}
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              aria-label="About this gallery"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-5 h-5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+            </button>
+          </MobileToolsDrawer>
+        </div>
       )}
 
       {!isTouchPrimary && !filterActive && (

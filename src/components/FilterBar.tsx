@@ -3,9 +3,6 @@
 import { useState } from "react";
 import type { Theme } from "@/lib/cells";
 
-// Icon-only, meant to sit inline in the main controls row alongside
-// recenter/joystick/about — the theme panel opens upward above it, same
-// convention as the minimap opening above the joystick.
 export default function FilterBar({
   themes,
   themeId,
@@ -18,11 +15,16 @@ export default function FilterBar({
   const [open, setOpen] = useState(false);
   const active = themeId != null;
 
+  const select = (id: number | null) => {
+    onThemeIdChange(id);
+    setOpen(false);
+  };
+
   return (
-    <div className="relative">
+    <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         aria-label="Filter by theme"
         className={`flex items-center justify-center w-10 h-10 rounded-full backdrop-blur border ${
           active
@@ -48,36 +50,55 @@ export default function FilterBar({
 
       {open && (
         <div
-          className="absolute left-1/2 -translate-x-1/2 w-56 rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-4 flex flex-col gap-3"
-          style={{ bottom: "calc(100% + 12px)" }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setOpen(false)}
         >
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-black/60 dark:text-white/60">Theme</span>
-            <select
-              value={themeId ?? ""}
-              onChange={(e) => onThemeIdChange(e.target.value ? Number(e.target.value) : null)}
-              className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-            >
-              <option value="">All themes</option>
-              {themes.map((theme) => (
-                <option key={theme.id} value={theme.id}>
-                  {theme.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div
+            className="w-full max-w-sm rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Filter by theme</h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="text-black/40 dark:text-white/40 hover:opacity-70"
+              >
+                ×
+              </button>
+            </div>
 
-          {active && (
-            <button
-              type="button"
-              onClick={() => onThemeIdChange(null)}
-              className="text-sm text-black/50 dark:text-white/50 hover:opacity-70 self-start"
-            >
-              Clear theme
-            </button>
-          )}
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => select(null)}
+                className={`text-left rounded-lg px-3 py-2 text-sm font-medium ${
+                  themeId == null
+                    ? "bg-blue-500 text-white"
+                    : "hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+              >
+                All themes
+              </button>
+              {themes.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => select(theme.id)}
+                  className={`text-left rounded-lg px-3 py-2 text-sm font-medium ${
+                    themeId === theme.id
+                      ? "bg-blue-500 text-white"
+                      : "hover:bg-black/5 dark:hover:bg-white/5"
+                  }`}
+                >
+                  {theme.name}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
