@@ -101,12 +101,29 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const translateRef = useRef({ x: 0, y: 0 });
   const syncScheduled = useRef(false);
 
-  const paintTransform = useCallback(() => {
-    if (wrapperRef.current) {
-      wrapperRef.current.style.transform = `translate3d(${translateRef.current.x}px, ${translateRef.current.y}px, 0)`;
-    }
-    minimapRef.current?.setPan(translateRef.current.x, translateRef.current.y);
-  }, []);
+  // `stepForMinimap` lets callers that change zoom mid-render (see
+  // handleZoomStep, which commits a translate from inside the setZoomIndex
+  // updater, before this component re-renders with the new cellStep) pass
+  // the up-to-date step explicitly — otherwise this would close over the
+  // stale, pre-zoom `cellStep` and briefly desync the minimap.
+  const paintTransform = useCallback(
+    (stepForMinimap?: number) => {
+      if (wrapperRef.current) {
+        wrapperRef.current.style.transform = `translate3d(${translateRef.current.x}px, ${translateRef.current.y}px, 0)`;
+      }
+      // Minimap dots are placed in fixed world-cell units (unaffected by
+      // zoom), so it needs the world coordinate currently at the viewport's
+      // center — not the raw pixel translate, which is scaled by the
+      // (zoom-dependent) cellStep and would drift the minimap out of sync
+      // with the real gallery center every time the thumbnail size changes.
+      const step = stepForMinimap ?? cellStep;
+      minimapRef.current?.setPan(
+        (viewport.width / 2 - translateRef.current.x) / step,
+        (viewport.height / 2 - translateRef.current.y) / step
+      );
+    },
+    [viewport.width, viewport.height, cellStep]
+  );
 
   const scheduleStateSync = useCallback(() => {
     if (syncScheduled.current) return;
@@ -118,9 +135,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, []);
 
   const commitTranslate = useCallback(
-    (next: { x: number; y: number }) => {
+    (next: { x: number; y: number }, stepForMinimap?: number) => {
       translateRef.current = next;
-      paintTransform();
+      paintTransform(stepForMinimap);
       scheduleStateSync();
     },
     [paintTransform, scheduleStateSync]
@@ -426,10 +443,13 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         const oldStep = CELL_SIZE * ZOOM_LEVELS[prevIndex] + GAP * ZOOM_LEVELS[prevIndex];
         const newStep = CELL_SIZE * ZOOM_LEVELS[nextIndex] + GAP * ZOOM_LEVELS[nextIndex];
         const ratio = newStep / oldStep;
-        commitTranslate({
-          x: anchor.x - (anchor.x - translateRef.current.x) * ratio,
-          y: anchor.y - (anchor.y - translateRef.current.y) * ratio,
-        });
+        commitTranslate(
+          {
+            x: anchor.x - (anchor.x - translateRef.current.x) * ratio,
+            y: anchor.y - (anchor.y - translateRef.current.y) * ratio,
+          },
+          newStep
+        );
         return nextIndex;
       });
     },

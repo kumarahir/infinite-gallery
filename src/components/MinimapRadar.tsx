@@ -5,7 +5,9 @@ import { MINIMAP_RADIUS_PX, MINIMAP_SCALE, STEP } from "@/lib/gridConstants";
 import type { CellCoord } from "@/lib/cells";
 
 export interface MinimapRadarHandle {
-  setPan: (x: number, y: number) => void;
+  // worldX/worldY: the world-cell coordinate currently at the center of the
+  // gallery viewport (zoom-independent) — not a raw pixel pan amount.
+  setPan: (worldX: number, worldY: number) => void;
 }
 
 // Purely a visual overlay — no pointer-events, no React re-renders while
@@ -23,10 +25,13 @@ const MinimapRadar = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      setPan(x: number, y: number) {
+      setPan(worldX: number, worldY: number) {
         if (layerRef.current) {
-          layerRef.current.style.transform = `translate3d(${x * MINIMAP_SCALE}px, ${
-            y * MINIMAP_SCALE
+          // Shifts the dot layer so the dot at (worldX, worldY) — the
+          // gallery's current viewport center — lands exactly on the fixed
+          // crosshair at the minimap's own center.
+          layerRef.current.style.transform = `translate3d(${-worldX * STEP * MINIMAP_SCALE}px, ${
+            -worldY * STEP * MINIMAP_SCALE
           }px, 0)`;
         }
       },
