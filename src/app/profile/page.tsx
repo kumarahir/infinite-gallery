@@ -73,12 +73,26 @@ export default async function ProfilePage() {
 
   return (
     <div className="min-h-dvh p-6 max-w-lg mx-auto flex flex-col gap-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Your profile</h1>
-        <Link href="/" className="text-sm underline text-black/60 dark:text-white/60">
-          Back to gallery
-        </Link>
-      </div>
+      <Link
+        href="/"
+        aria-label="Back to gallery"
+        className="fixed top-4 left-4 z-40 flex items-center justify-center w-9 h-9 rounded-full bg-background/90 backdrop-blur border border-black/10 dark:border-white/15 shadow-lg text-black/60 dark:text-white/60 hover:opacity-90"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-5 h-5"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </Link>
+
+      <h1 className="text-xl font-semibold">Your profile</h1>
 
       <div className="rounded-lg bg-gradient-to-br from-amber-100 to-pink-100 dark:from-amber-900/40 dark:to-pink-900/30 border border-amber-200 dark:border-amber-800/50 px-4 py-3 text-center">
         <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">
