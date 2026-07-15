@@ -17,7 +17,9 @@ export default function MobileToolsDrawer({
         open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
       }`}
     >
-      <div className="overflow-hidden flex items-center gap-3">{children}</div>
+      <div className="overflow-hidden flex items-center gap-3 rounded-2xl bg-black/5 dark:bg-white/5 backdrop-blur-sm px-4 py-3">
+        {children}
+      </div>
     </div>
   );
 }

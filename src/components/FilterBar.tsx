@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { Theme } from "@/lib/cells";
 
 export default function FilterBar({
@@ -48,57 +49,65 @@ export default function FilterBar({
         </svg>
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setOpen(false)}
-        >
+      {open &&
+        createPortal(
+          // Rendered via a portal straight into <body> rather than in place —
+          // this button can sit inside an ancestor with a CSS transform (the
+          // mobile control row uses -translate-x-1/2 to center itself), and a
+          // transformed ancestor becomes the containing block for `position:
+          // fixed` descendants, which would otherwise position this modal
+          // relative to that small row instead of the actual viewport.
           <div
-            className="w-full max-w-sm rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setOpen(false)}
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Filter by theme</h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="text-black/40 dark:text-white/40 hover:opacity-70"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={() => select(null)}
-                className={`text-left rounded-lg px-3 py-2 text-sm font-medium ${
-                  themeId == null
-                    ? "bg-blue-500 text-white"
-                    : "hover:bg-black/5 dark:hover:bg-white/5"
-                }`}
-              >
-                All themes
-              </button>
-              {themes.map((theme) => (
+            <div
+              className="w-full rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-3 max-h-[85vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Filter by theme</h2>
                 <button
-                  key={theme.id}
                   type="button"
-                  onClick={() => select(theme.id)}
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                  className="text-black/40 dark:text-white/40 hover:opacity-70"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => select(null)}
                   className={`text-left rounded-lg px-3 py-2 text-sm font-medium ${
-                    themeId === theme.id
+                    themeId == null
                       ? "bg-blue-500 text-white"
                       : "hover:bg-black/5 dark:hover:bg-white/5"
                   }`}
                 >
-                  {theme.name}
+                  All themes
                 </button>
-              ))}
+                {themes.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => select(theme.id)}
+                    className={`text-left rounded-lg px-3 py-2 text-sm font-medium ${
+                      themeId === theme.id
+                        ? "bg-blue-500 text-white"
+                        : "hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {theme.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
