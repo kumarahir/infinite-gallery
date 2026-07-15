@@ -394,3 +394,126 @@ end;
 $$;
 
 grant execute on function public.set_default_theme(bigint) to authenticated;
+
+-- v2.1: upload streaks. current_streak/longest_streak/last_upload_date are
+-- maintained entirely by the trigger below (never written to directly by
+-- the client) so every image-insert path — including the admin bulk
+-- uploader — updates them consistently without each call site having to
+-- remember to. Reading your own streak needs no new policy: the existing
+-- "profiles_select_self" policy already covers it.
+alter table public.profiles
+  add column current_streak integer not null default 0,
+  add column longest_streak integer not null default 0,
+  add column last_upload_date date,
+  add column streak_reminder_sent_at timestamptz;
+
+create or replace function public.bump_upload_streak()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_last_date date;
+  v_current integer;
+  v_longest integer;
+  v_today date := (now() at time zone 'utc')::date;
+begin
+  if new.cell_type <> 'image' then
+    return new;
+  end if;
+
+  select last_upload_date, current_streak, longest_streak
+    into v_last_date, v_current, v_longest
+    from public.profiles
+    where id = new.created_by;
+
+  if v_last_date = v_today then
+    -- Already logged an upload today (e.g. a second image) — no change.
+    return new;
+  elsif v_last_date = v_today - 1 then
+    v_current := v_current + 1;
+  else
+    -- Gap of 2+ days, or this is the user's first-ever upload.
+    v_current := 1;
+  end if;
+
+  if v_longest is null or v_current > v_longest then
+    v_longest := v_current;
+  end if;
+
+  update public.profiles
+  set current_streak = v_current,
+      longest_streak = v_longest,
+      last_upload_date = v_today,
+      -- Clears any past reminder flag so a future break can be reminded again.
+      streak_reminder_sent_at = null
+  where id = new.created_by;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_cell_insert_bump_streak on public.cells;
+create trigger on_cell_insert_bump_streak
+  after insert on public.cells
+  for each row execute function public.bump_upload_streak();
+
+-- Reminder email cron support. A scheduled job has no logged-in user, so it
+-- can't rely on auth.uid()/is_admin() the way every other RPC in this file
+-- does. Instead these two functions gate on a shared secret passed as a
+-- parameter — the same "shared secret" trust model already used by the
+-- welcome-email webhook (see src/app/api/welcome-email/route.ts), just
+-- expressed as a Postgres GUC instead of an HTTP header. Set the matching
+-- value once via:
+--   alter database postgres set app.cron_secret = 'some-long-random-string';
+-- (must equal the CRON_SECRET env var used by src/app/api/streak-reminders).
+-- Granted to anon since a cron job authenticates with no user session at
+-- all — safe only because both functions independently reject any caller
+-- that doesn't supply the exact matching secret.
+create or replace function public.get_streak_reminder_candidates(p_secret text)
+returns table (
+  id uuid,
+  email text,
+  display_name text,
+  current_streak integer
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_secret is null or p_secret <> current_setting('app.cron_secret', true) then
+    raise exception 'not authorized';
+  end if;
+
+  return query
+  select p.id, p.email, p.display_name, p.current_streak
+  from public.profiles p
+  where p.current_streak > 0
+    and p.last_upload_date < (current_date - 2)
+    and p.streak_reminder_sent_at is null;
+end;
+$$;
+
+grant execute on function public.get_streak_reminder_candidates(text) to anon, authenticated;
+
+create or replace function public.mark_streak_reminders_sent(p_secret text, p_user_ids uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_secret is null or p_secret <> current_setting('app.cron_secret', true) then
+    raise exception 'not authorized';
+  end if;
+
+  update public.profiles
+  set streak_reminder_sent_at = now()
+  where id = any(p_user_ids);
+end;
+$$;
+
+grant execute on function public.mark_streak_reminders_sent(text, uuid[]) to anon, authenticated;

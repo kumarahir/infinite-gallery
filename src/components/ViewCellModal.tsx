@@ -86,12 +86,14 @@ export default function ViewCellModal({
   cell,
   isAdmin,
   celebrateTotal,
+  celebrateStreak,
   onClose,
   onDeleted,
 }: {
   cell: CellRow;
   isAdmin: boolean;
   celebrateTotal?: number | null;
+  celebrateStreak?: number | null;
   onClose: () => void;
   onDeleted: (x: number, y: number) => void;
 }) {
@@ -137,6 +139,12 @@ export default function ViewCellModal({
           <p className="text-sm font-medium text-center">
             Thank you for adding one more AtomicSketch
             {celebrateTotal != null ? ` to make it total of ${celebrateTotal}` : ""}
+          </p>
+        )}
+
+        {celebrateStreak != null && celebrateStreak > 0 && (
+          <p className="text-sm font-medium text-center text-amber-600 dark:text-amber-400">
+            🔥 {celebrateStreak}-day upload streak
           </p>
         )}
 

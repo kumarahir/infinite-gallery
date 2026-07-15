@@ -9,6 +9,9 @@ export interface Profile {
   website_url: string | null;
   instagram_handle: string | null;
   twitter_handle: string | null;
+  current_streak: number;
+  longest_streak: number;
+  last_upload_date: string | null;
 }
 
 export async function fetchProfiles(): Promise<Profile[]> {
@@ -42,6 +45,22 @@ export async function fetchCanUpload(userId: string): Promise<boolean> {
     .maybeSingle();
   if (error) throw error;
   return data?.can_upload ?? true;
+}
+
+// current_streak is kept up to date automatically by a DB trigger on every
+// image insert (see bump_upload_streak in schema.sql) — this just reads the
+// freshly-written value back, right after an upload, to show in the
+// celebration banner. No new policy needed: profiles_select_self already
+// covers reading your own row.
+export async function fetchMyStreak(userId: string): Promise<number> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("current_streak")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.current_streak ?? 0;
 }
 
 export async function fetchMyProfile(userId: string): Promise<Profile | null> {

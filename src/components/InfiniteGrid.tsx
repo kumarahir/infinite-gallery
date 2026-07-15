@@ -56,6 +56,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     x: number;
     y: number;
     total: number | null;
+    streak: number | null;
   } | null>(null);
   const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
   const [radarVisible, setRadarVisible] = useState(false);
@@ -356,15 +357,17 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, [range, getActiveCell, version]);
 
   const handleCellCreated = useCallback(
-    (cell: CellRow) => {
+    (cell: CellRow, streak?: number) => {
       addLocalCell(cell);
       if (cell.cell_type !== "image") return;
       setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y, created_by: cell.created_by }]);
       // Show the thank-you banner immediately (count fills in once known) —
       // the ViewCellModal that's about to render for this cell reads it.
-      setCelebration({ x: cell.x, y: cell.y, total: null });
+      // The streak is already known at this point (AddCellModal fetched it
+      // right after the insert), unlike the total count below.
+      setCelebration({ x: cell.x, y: cell.y, total: null, streak: streak ?? null });
       fetchTotalImageCount()
-        .then((total) => setCelebration({ x: cell.x, y: cell.y, total }))
+        .then((total) => setCelebration((prev) => (prev ? { ...prev, total } : prev)))
         .catch(() => {
           // Leave the banner showing without a count rather than erroring out.
         });
@@ -757,6 +760,11 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             celebrateTotal={
               celebration && celebration.x === pendingCell.x && celebration.y === pendingCell.y
                 ? celebration.total
+                : undefined
+            }
+            celebrateStreak={
+              celebration && celebration.x === pendingCell.x && celebration.y === pendingCell.y
+                ? celebration.streak
                 : undefined
             }
             onClose={closeModal}

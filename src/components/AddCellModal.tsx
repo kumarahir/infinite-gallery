@@ -13,7 +13,7 @@ import {
   type CellRow,
   type Theme,
 } from "@/lib/cells";
-import { fetchCanUpload } from "@/lib/profiles";
+import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImage } from "@/lib/resizeImage";
 import SignInPanel from "./SignInPanel";
 
@@ -43,7 +43,7 @@ export default function AddCellModal({
   user: User | null;
   isAdmin: boolean;
   onClose: () => void;
-  onCreated: (cell: CellRow) => void;
+  onCreated: (cell: CellRow, streak?: number) => void;
 }) {
   const [tab, setTab] = useState<"image" | "text">("image");
   const [file, setFile] = useState<File | null>(null);
@@ -135,7 +135,8 @@ export default function AddCellModal({
       }
       const { blob, width, height } = await resizeImage(file);
       const cell = await insertImageCell(x, y, blob, width, height, user.id, themeId);
-      onCreated(cell);
+      const streak = await fetchMyStreak(user.id).catch(() => undefined);
+      onCreated(cell, streak);
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
       // Deliberately no onClose() here — the parent grid now has this cell
       // in its cache, so it re-renders this same pendingCell coordinate as
