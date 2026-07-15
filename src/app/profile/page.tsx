@@ -2,7 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProfileForm from "@/components/ProfileForm";
+import ContributionCalendar, { type ContributionDay } from "@/components/ContributionCalendar";
 import type { Profile } from "@/lib/profiles";
+
+const CALENDAR_WEEKS = 18;
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -40,6 +43,33 @@ export default async function ProfilePage() {
   const streakActive = daysSinceUpload !== null && daysSinceUpload <= 1;
   const currentStreak = streakActive ? typedProfile?.current_streak ?? 0 : 0;
   const longestStreak = typedProfile?.longest_streak ?? 0;
+
+  // Aligned to start on a Sunday so the calendar renders as complete
+  // 7-day week columns, GitHub-heatmap style.
+  const startDate = new Date(today);
+  startDate.setUTCDate(startDate.getUTCDate() - (CALENDAR_WEEKS * 7 - 1));
+  startDate.setUTCDate(startDate.getUTCDate() - startDate.getUTCDay());
+
+  const { data: contributionRows } = await supabase
+    .from("cells")
+    .select("created_at")
+    .eq("created_by", user.id)
+    .eq("cell_type", "image")
+    .gte("created_at", startDate.toISOString());
+
+  const contributionCounts = new Map<string, number>();
+  for (const row of contributionRows ?? []) {
+    const day = (row.created_at as string).slice(0, 10);
+    contributionCounts.set(day, (contributionCounts.get(day) ?? 0) + 1);
+  }
+
+  const contributionDays: ContributionDay[] = [];
+  for (let i = 0; i < CALENDAR_WEEKS * 7; i++) {
+    const d = new Date(startDate);
+    d.setUTCDate(d.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    contributionDays.push({ date: key, count: contributionCounts.get(key) ?? 0 });
+  }
 
   return (
     <div className="min-h-dvh p-6 max-w-lg mx-auto flex flex-col gap-8">
@@ -79,6 +109,8 @@ export default async function ProfilePage() {
           </p>
         </div>
       </div>
+
+      <ContributionCalendar days={contributionDays} />
 
       <ProfileForm initialProfile={profile as Profile | null} />
     </div>
