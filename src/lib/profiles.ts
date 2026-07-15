@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/client";
 
 export interface Profile {
@@ -12,6 +13,31 @@ export interface Profile {
   current_streak: number;
   longest_streak: number;
   last_upload_date: string | null;
+  avatar_path: string | null;
+}
+
+const AVATAR_BUCKET = "profile-avatars";
+
+export function getPublicAvatarUrl(avatarPath: string): string {
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${AVATAR_BUCKET}/${avatarPath}`;
+}
+
+// Uploads to a per-user folder in the profile-avatars bucket (mirrors
+// cells-images' convention) then records the path via an RPC — profiles has
+// no general self-update policy (see updateMySocialLinks below for why).
+export async function uploadMyAvatar(userId: string, blob: Blob): Promise<string> {
+  const supabase = createClient();
+  const path = `${userId}/${nanoid()}.webp`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, blob, { contentType: "image/webp" });
+  if (uploadError) throw uploadError;
+
+  const { error: rpcError } = await supabase.rpc("update_my_avatar", { p_avatar_path: path });
+  if (rpcError) throw rpcError;
+
+  return path;
 }
 
 export async function fetchProfiles(): Promise<Profile[]> {

@@ -534,3 +534,61 @@ end;
 $$;
 
 grant execute on function public.mark_streak_reminders_sent(text, uuid[]) to anon, authenticated;
+
+-- v2.2: profile avatar images. Its own storage bucket (not cells-images) so
+-- avatar replacements/deletes never touch gallery images. Same
+-- folder-per-user convention as cells-images: storage path is
+-- `${userId}/${filename}`, enforced by these policies. When a user has no
+-- avatar, the UI falls back to a deterministic color+scribble generated
+-- client-side (see src/components/DefaultAvatar.tsx) — nothing to store for
+-- that case.
+alter table public.profiles add column avatar_path text;
+
+-- Storage: create a bucket named `profile-avatars` via the Storage UI first
+-- (Storage -> New bucket -> name "profile-avatars" -> Public bucket: ON),
+-- then run these policies.
+
+create policy "avatars_public_read"
+  on storage.objects for select
+  using (bucket_id = 'profile-avatars');
+
+create policy "avatars_authenticated_insert"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'profile-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "avatars_authenticated_update"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'profile-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "avatars_authenticated_delete"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'profile-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Routed through an RPC — profiles has no general self-update policy (see
+-- update_my_social_links above for why).
+create or replace function public.update_my_avatar(p_avatar_path text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set avatar_path = p_avatar_path
+  where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.update_my_avatar(text) to authenticated;

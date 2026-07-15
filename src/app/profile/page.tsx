@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProfileForm from "@/components/ProfileForm";
+import ProfileIdentityHeader from "@/components/ProfileIdentityHeader";
 import ContributionCalendar, { type ContributionDay } from "@/components/ContributionCalendar";
 import type { Profile } from "@/lib/profiles";
 
@@ -93,6 +94,13 @@ export default async function ProfilePage() {
       </Link>
 
       <h1 className="text-xl font-semibold">Your profile</h1>
+
+      <ProfileIdentityHeader
+        userId={user.id}
+        displayName={typedProfile?.display_name ?? null}
+        email={user.email ?? typedProfile?.email ?? ""}
+        initialAvatarPath={typedProfile?.avatar_path ?? null}
+      />
 
       <div className="rounded-lg bg-gradient-to-br from-amber-100 to-pink-100 dark:from-amber-900/40 dark:to-pink-900/30 border border-amber-200 dark:border-amber-800/50 px-4 py-3 text-center">
         <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">

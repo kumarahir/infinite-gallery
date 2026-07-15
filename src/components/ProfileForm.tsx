@@ -42,14 +42,6 @@ export default function ProfileForm({ initialProfile }: { initialProfile: Profil
 
   return (
     <div className="flex flex-col gap-6">
-      {initialProfile && (
-        <div className="text-sm text-black/60 dark:text-white/60">
-          <p className="font-medium text-black dark:text-white">
-            {initialProfile.display_name ?? initialProfile.email}
-          </p>
-          <p>{initialProfile.email}</p>
-        </div>
-      )}
 
       <div className="flex flex-col gap-4">
         <h2 className="text-sm font-semibold text-black/50 dark:text-white/50">
