@@ -449,6 +449,13 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [handleZoomStep]
   );
 
+  // Single toggle button: below the default size, the next tap zooms back
+  // up to it; at the default, the next tap zooms down one step.
+  const isZoomedOut = zoomIndex < DEFAULT_ZOOM_INDEX;
+  const toggleZoom = useCallback(() => {
+    zoomAtCenter(isZoomedOut ? 1 : -1);
+  }, [zoomAtCenter, isZoomedOut]);
+
   // Jump to the start of the clustered results as soon as a filter engages,
   // rather than leaving the view wherever it happened to be panned to in
   // the real gallery (which could be far from the compact virtual layout).
@@ -596,10 +603,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           )}
           <button
             type="button"
-            onClick={() => zoomAtCenter(-1)}
-            disabled={zoomIndex === 0}
-            aria-label="Decrease thumbnail size"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+            onClick={toggleZoom}
+            aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -611,25 +617,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               className="w-5 h-5"
             >
               <path d="M5 12h14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomAtCenter(1)}
-            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-            aria-label="Increase thumbnail size"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="w-5 h-5"
-            >
-              <path d="M12 5v14M5 12h14" />
+              {isZoomedOut && <path d="M12 5v14" />}
             </svg>
           </button>
           <div className="relative w-24 h-24 flex items-center justify-center">
@@ -704,10 +692,9 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           )}
           <button
             type="button"
-            onClick={() => zoomAtCenter(-1)}
-            disabled={zoomIndex === 0}
-            aria-label="Decrease thumbnail size"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
+            onClick={toggleZoom}
+            aria-label={isZoomedOut ? "Increase thumbnail size" : "Decrease thumbnail size"}
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -719,25 +706,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               className="w-5 h-5"
             >
               <path d="M5 12h14" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomAtCenter(1)}
-            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-            aria-label="Increase thumbnail size"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-30"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="w-5 h-5"
-            >
-              <path d="M12 5v14M5 12h14" />
+              {isZoomedOut && <path d="M12 5v14" />}
             </svg>
           </button>
         </div>
