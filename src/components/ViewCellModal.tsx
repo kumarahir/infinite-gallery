@@ -166,6 +166,11 @@ export default function ViewCellModal({
               alt=""
               width={cell.image_width ?? 800}
               height={cell.image_height ?? 800}
+              // The modal never renders wider than max-w-lg (512px) minus
+              // its own padding — without `sizes`, Next.js would assume up
+              // to the full viewport width and request/bill a needlessly
+              // larger transform.
+              sizes="(max-width: 640px) 90vw, 512px"
               onLoad={() => setImageLoaded(true)}
               className={`max-w-full max-h-[70vh] w-auto h-auto object-contain transition-opacity duration-200 ${
                 imageLoaded ? "opacity-100" : "opacity-0"

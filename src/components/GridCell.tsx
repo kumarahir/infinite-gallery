@@ -62,8 +62,14 @@ function GridCell({
         <Image
           src={getPublicImageUrl(cell.image_path)}
           alt=""
-          width={cell.image_width ?? cellSize}
-          height={cell.image_height ?? cellSize}
+          width={cellSize}
+          height={cellSize}
+          // Without `sizes`, Next.js assumes this could render as wide as
+          // the viewport and requests (and bills) a much larger transform
+          // than this thumbnail — which is always exactly cellSize — ever
+          // needs, even though CSS (object-cover, below) is what actually
+          // fits it into the cell.
+          sizes={`${cellSize}px`}
           draggable={false}
           className="w-full h-full object-cover pointer-events-none"
         />
