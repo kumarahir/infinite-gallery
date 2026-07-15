@@ -463,11 +463,24 @@ create trigger on_cell_insert_bump_streak
 -- can't rely on auth.uid()/is_admin() the way every other RPC in this file
 -- does. Instead these two functions gate on a shared secret passed as a
 -- parameter — the same "shared secret" trust model already used by the
--- welcome-email webhook (see src/app/api/welcome-email/route.ts), just
--- expressed as a Postgres GUC instead of an HTTP header. Set the matching
--- value once via:
---   alter database postgres set app.cron_secret = 'some-long-random-string';
--- (must equal the CRON_SECRET env var used by src/app/api/streak-reminders).
+-- welcome-email webhook (see src/app/api/welcome-email/route.ts). The
+-- secret itself lives in this table rather than a Postgres GUC — Supabase's
+-- hosted SQL editor doesn't run as a true superuser, so `alter database ...
+-- set app.cron_secret = ...` fails with "permission denied to set
+-- parameter". No grants are given on this table to anon/authenticated, so
+-- it's only ever readable from inside a security-definer function (which
+-- runs as the table owner, exempt from that restriction) — never directly.
+create table public.app_secrets (
+  key   text primary key,
+  value text not null
+);
+alter table public.app_secrets enable row level security;
+
+-- Set this once (and again any time you rotate it) — must equal the
+-- CRON_SECRET env var used by src/app/api/streak-reminders:
+--   insert into public.app_secrets (key, value) values ('cron_secret', 'some-long-random-string')
+--   on conflict (key) do update set value = excluded.value;
+
 -- Granted to anon since a cron job authenticates with no user session at
 -- all — safe only because both functions independently reject any caller
 -- that doesn't supply the exact matching secret.
@@ -484,7 +497,9 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_secret is null or p_secret <> current_setting('app.cron_secret', true) then
+  if p_secret is null or not exists (
+    select 1 from public.app_secrets where key = 'cron_secret' and value = p_secret
+  ) then
     raise exception 'not authorized';
   end if;
 
@@ -506,7 +521,9 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_secret is null or p_secret <> current_setting('app.cron_secret', true) then
+  if p_secret is null or not exists (
+    select 1 from public.app_secrets where key = 'cron_secret' and value = p_secret
+  ) then
     raise exception 'not authorized';
   end if;
 
