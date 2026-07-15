@@ -17,7 +17,12 @@ export default function MobileToolsDrawer({
         open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
       }`}
     >
-      <div className="overflow-hidden flex items-center justify-center gap-3 bg-neutral-100/95 backdrop-blur-sm py-3">
+      {/* The icon buttons rendered here use dark: variants designed for a
+          dark backdrop (matching wherever else they're used, directly on
+          the gallery) — pairing the off-white light-mode background with a
+          dark counterpart here keeps those variants legible instead of
+          going light-icon-on-light-background in dark mode. */}
+      <div className="overflow-hidden flex items-center justify-center gap-3 bg-neutral-100/95 dark:bg-neutral-800/95 backdrop-blur-sm py-3">
         {children}
       </div>
     </div>

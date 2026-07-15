@@ -53,7 +53,7 @@ const MinimapRadar = forwardRef<
 
   return (
     <div
-      className="relative rounded-full overflow-hidden bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20"
+      className="relative rounded-full overflow-hidden bg-black/20 dark:bg-white/20 backdrop-blur border border-black/10 dark:border-white/30"
       style={{ width: diameter, height: diameter }}
     >
       <div ref={layerRef} className="absolute top-1/2 left-1/2" style={{ willChange: "transform" }}>
