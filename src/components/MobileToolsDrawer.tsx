@@ -13,11 +13,11 @@ export default function MobileToolsDrawer({
 }) {
   return (
     <div
-      className={`grid transition-all duration-300 ease-out ${
+      className={`grid w-screen transition-all duration-300 ease-out ${
         open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
       }`}
     >
-      <div className="overflow-hidden flex items-center gap-3 rounded-2xl bg-black/5 dark:bg-white/5 backdrop-blur-sm px-4 py-3">
+      <div className="overflow-hidden flex items-center justify-center gap-3 bg-neutral-100/95 backdrop-blur-sm py-3">
         {children}
       </div>
     </div>
