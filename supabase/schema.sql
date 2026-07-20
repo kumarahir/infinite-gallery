@@ -592,3 +592,14 @@ end;
 $$;
 
 grant execute on function public.update_my_avatar(text) to authenticated;
+
+-- v2.4: dedicated small thumbnail for grid cells, generated client-side at
+-- upload time (see resizeImageWithThumbnail in resizeImage.ts) so the grid
+-- never asks Next's Image Optimization to downsize the full ~1200px
+-- original for what's always an 80-160px cell — cheaper transforms and
+-- meaningfully less data transferred on every load. No new policy needed:
+-- it's just another column on cells, covered by the existing insert/select
+-- policies. Cells uploaded before this exists have no thumbnail_path;
+-- GridCell falls back to image_path for those (already correctly capped by
+-- the sizes/deviceSizes work from the previous migration).
+alter table public.cells add column thumbnail_path text;

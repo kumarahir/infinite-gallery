@@ -52,6 +52,13 @@ function GridCell({
 
   if (cell.cell_type === "image" && cell.image_path) {
     const isOwn = !!currentUserId && cell.created_by === currentUserId;
+    // Cells uploaded after the dedicated-thumbnail feature shipped have a
+    // pre-shrunk ~400px file — already the right ballpark size for an
+    // 80-160px cell, so there's nothing for Next's Image Optimization to
+    // usefully do to it (unoptimized skips that transform entirely). Older
+    // cells have no thumbnail_path and fall back to the full image, still
+    // correctly downsized server-side via the sizes prop below.
+    const hasThumbnail = !!cell.thumbnail_path;
     return (
       <div
         style={style}
@@ -60,15 +67,16 @@ function GridCell({
         }`}
       >
         <Image
-          src={getPublicImageUrl(cell.image_path)}
+          src={getPublicImageUrl(cell.thumbnail_path ?? cell.image_path)}
           alt=""
           width={cellSize}
           height={cellSize}
+          unoptimized={hasThumbnail}
           // Without `sizes`, Next.js assumes this could render as wide as
           // the viewport and requests (and bills) a much larger transform
           // than this thumbnail — which is always exactly cellSize — ever
           // needs, even though CSS (object-cover, below) is what actually
-          // fits it into the cell.
+          // fits it into the cell. Ignored when unoptimized.
           sizes={`${cellSize}px`}
           draggable={false}
           className="w-full h-full object-cover pointer-events-none"

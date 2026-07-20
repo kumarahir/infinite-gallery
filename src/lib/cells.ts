@@ -8,6 +8,10 @@ export interface CellRow {
   cell_type: "image" | "text";
   text_content: string | null;
   image_path: string | null;
+  // Small dedicated thumbnail generated at upload time (see
+  // resizeImageWithThumbnail) — null for cells uploaded before this existed,
+  // in which case the grid falls back to image_path.
+  thumbnail_path: string | null;
   image_width: number | null;
   image_height: number | null;
   created_by: string;
@@ -70,8 +74,11 @@ export async function fetchCellAt(x: number, y: number): Promise<CellRow | null>
 
 export async function deleteCell(cell: CellRow): Promise<void> {
   const supabase = createClient();
-  if (cell.cell_type === "image" && cell.image_path) {
-    await supabase.storage.from(BUCKET).remove([cell.image_path]);
+  if (cell.cell_type === "image") {
+    const paths = [cell.image_path, cell.thumbnail_path].filter((p): p is string => !!p);
+    if (paths.length > 0) {
+      await supabase.storage.from(BUCKET).remove(paths);
+    }
   }
   const { error } = await supabase.from("cells").delete().eq("id", cell.id);
   if (error) throw error;
@@ -254,6 +261,7 @@ async function insertCell(row: {
   cell_type: "image" | "text";
   text_content?: string;
   image_path?: string;
+  thumbnail_path?: string;
   image_width?: number;
   image_height?: number;
   theme_id?: number | null;
@@ -297,23 +305,33 @@ export async function insertTextCell(
   });
 }
 
-export async function insertImageCell(
-  x: number,
-  y: number,
-  blob: Blob,
-  width: number,
-  height: number,
-  userId: string,
-  themeId: number | null
-): Promise<CellRow> {
+export async function insertImageCell(params: {
+  x: number;
+  y: number;
+  blob: Blob;
+  width: number;
+  height: number;
+  thumbnailBlob: Blob;
+  userId: string;
+  themeId: number | null;
+}): Promise<CellRow> {
+  const { x, y, blob, width, height, thumbnailBlob, userId, themeId } = params;
   const supabase = createClient();
   const path = `${userId}/${nanoid()}.webp`;
+  const thumbnailPath = `${userId}/${nanoid()}-thumb.webp`;
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
     .upload(path, blob, { contentType: "image/webp" });
-
   if (uploadError) throw uploadError;
+
+  const { error: thumbnailUploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(thumbnailPath, thumbnailBlob, { contentType: "image/webp" });
+  if (thumbnailUploadError) {
+    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    throw thumbnailUploadError;
+  }
 
   try {
     return await insertCell({
@@ -321,6 +339,7 @@ export async function insertImageCell(
       y,
       cell_type: "image",
       image_path: path,
+      thumbnail_path: thumbnailPath,
       image_width: width,
       image_height: height,
       theme_id: themeId,
@@ -328,8 +347,11 @@ export async function insertImageCell(
     });
   } catch (err) {
     // Row insert failed (e.g. daily limit, or someone else just took this
-    // cell) — clean up the file we just uploaded so it doesn't linger.
-    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    // cell) — clean up the files we just uploaded so they don't linger.
+    await Promise.all([
+      supabase.storage.from(BUCKET).remove([path]).catch(() => {}),
+      supabase.storage.from(BUCKET).remove([thumbnailPath]).catch(() => {}),
+    ]);
     throw err;
   }
 }

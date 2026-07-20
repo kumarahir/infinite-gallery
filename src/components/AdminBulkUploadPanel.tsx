@@ -8,7 +8,7 @@ import {
   insertImageCell,
   type Theme,
 } from "@/lib/cells";
-import { resizeImage } from "@/lib/resizeImage";
+import { resizeImageWithThumbnail } from "@/lib/resizeImage";
 import { useUser } from "@/hooks/useUser";
 
 const ALLOWED_TYPES = new Set([
@@ -98,7 +98,7 @@ export default function AdminBulkUploadPanel() {
         if (!ALLOWED_TYPES.has(file.type)) throw new Error("Unsupported file type.");
         if (file.size > MAX_FILE_SIZE) throw new Error("File is too large (max 20MB).");
 
-        const { blob, width, height } = await resizeImage(file);
+        const { full, thumbnail } = await resizeImageWithThumbnail(file);
 
         let placed = false;
         let lastError: unknown = null;
@@ -110,7 +110,16 @@ export default function AdminBulkUploadPanel() {
           }
           occupied.add(`${cell.x}:${cell.y}`);
           try {
-            await insertImageCell(cell.x, cell.y, blob, width, height, user.id, themeId);
+            await insertImageCell({
+              x: cell.x,
+              y: cell.y,
+              blob: full.blob,
+              width: full.width,
+              height: full.height,
+              thumbnailBlob: thumbnail.blob,
+              userId: user.id,
+              themeId,
+            });
             placed = true;
           } catch (err) {
             lastError = err;

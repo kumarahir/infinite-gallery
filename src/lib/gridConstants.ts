@@ -2,7 +2,10 @@ export const CELL_SIZE = 160;
 export const GAP = 8;
 export const STEP = CELL_SIZE + GAP;
 export const CHUNK_SIZE = 16;
-export const BUFFER = 2;
+// Cells beyond the visible edge that still get rendered (and so still fetch
+// their thumbnail) — kept small since every extra ring here is real
+// bandwidth on every load, not just a smoother pan.
+export const BUFFER = 1;
 
 // Below this drag distance (px) a pointer-down/up pair is treated as a
 // tap/click rather than a pan gesture.

@@ -14,7 +14,7 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
-import { resizeImage } from "@/lib/resizeImage";
+import { resizeImageWithThumbnail } from "@/lib/resizeImage";
 import SignInPanel from "./SignInPanel";
 
 const ALLOWED_TYPES = new Set([
@@ -133,8 +133,17 @@ export default function AddCellModal({
           return;
         }
       }
-      const { blob, width, height } = await resizeImage(file);
-      const cell = await insertImageCell(x, y, blob, width, height, user.id, themeId);
+      const { full, thumbnail } = await resizeImageWithThumbnail(file);
+      const cell = await insertImageCell({
+        x,
+        y,
+        blob: full.blob,
+        width: full.width,
+        height: full.height,
+        thumbnailBlob: thumbnail.blob,
+        userId: user.id,
+        themeId,
+      });
       const streak = await fetchMyStreak(user.id).catch(() => undefined);
       onCreated(cell, streak);
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
