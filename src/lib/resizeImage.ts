@@ -55,7 +55,10 @@ async function encodeAtSize(
   return { blob, width, height };
 }
 
-export async function resizeImage(file: File): Promise<ResizedImage> {
+// Accepts a plain Blob (not just File) so the output of the document-scan
+// pipeline (scanDocument.ts's warpAndClean, which has no filename) can feed
+// straight into the same resize/encode path as a raw picked file.
+export async function resizeImage(file: Blob): Promise<ResizedImage> {
   const bitmap = await createImageBitmap(file);
   const result = await encodeAtSize(bitmap, MAX_DIMENSION, MAX_BYTES);
   bitmap.close();
@@ -67,7 +70,7 @@ export async function resizeImage(file: File): Promise<ResizedImage> {
 // image uploads, where the grid should never have to ask the server to
 // downsize the full-size original just to show an 80-160px cell.
 export async function resizeImageWithThumbnail(
-  file: File
+  file: Blob
 ): Promise<{ full: ResizedImage; thumbnail: ResizedImage }> {
   const bitmap = await createImageBitmap(file);
   const full = await encodeAtSize(bitmap, MAX_DIMENSION, MAX_BYTES);

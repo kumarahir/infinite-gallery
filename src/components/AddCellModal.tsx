@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useEffect } from "react";
 import confetti from "canvas-confetti";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -15,6 +16,8 @@ import {
 } from "@/lib/cells";
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImageWithThumbnail } from "@/lib/resizeImage";
+import { detectPaperCorners, looksLikeSketch, warpAndClean, type Corners } from "@/lib/scanDocument";
+import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
 
 const ALLOWED_TYPES = new Set([
@@ -29,6 +32,19 @@ const MAX_TEXT_LENGTH = 280;
 const DAILY_IMAGE_LIMIT = 5;
 const DAILY_LIMIT_MESSAGE = `You've reached today's limit of ${DAILY_IMAGE_LIMIT} image uploads. Try again tomorrow.`;
 const ADMIN_EMAIL = "kumar.ahir@gmail.com";
+
+// Drives what the "image" tab shows, between picking a file and having a
+// final processed image ready to submit alongside the theme picker.
+type ImageStep = "picker" | "sketchWarning" | "scanning" | "adjusting" | "ready";
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load that image."));
+    img.src = url;
+  });
+}
 
 export default function AddCellModal({
   x,
@@ -46,8 +62,18 @@ export default function AddCellModal({
   onCreated: (cell: CellRow, streak?: number) => void;
 }) {
   const [tab, setTab] = useState<"image" | "text">("image");
-  const [file, setFile] = useState<File | null>(null);
+
+  const [imageStep, setImageStep] = useState<ImageStep>("picker");
+  const [rawFile, setRawFile] = useState<File | null>(null);
+  const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
+  const [rawImageSize, setRawImageSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
+  const [corners, setCorners] = useState<Corners | null>(null);
+  const [processedBlob, setProcessedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,13 +122,56 @@ export default function AddCellModal({
       });
   }, []);
 
+  const resetImageFlow = () => {
+    setImageStep("picker");
+    setRawFile(null);
+    setRawImageUrl(null);
+    setRawImageSize(null);
+    setCorners(null);
+    setProcessedBlob(null);
+    setPreviewUrl(null);
+    setScanError(null);
+    setError(null);
+  };
+
+  // skipSketchCheck lets "Use this photo anyway" bypass the heuristic on a
+  // photo it already rejected once, without re-running it.
+  const runScan = async (f: File, skipSketchCheck: boolean) => {
+    setScanError(null);
+    if (!skipSketchCheck) {
+      const looksOk = await looksLikeSketch(f).catch(() => true); // fail open
+      if (!looksOk) {
+        setImageStep("sketchWarning");
+        return;
+      }
+    }
+
+    setImageStep("scanning");
+    try {
+      const url = URL.createObjectURL(f);
+      const img = await loadImage(url);
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      setRawImageUrl(url);
+      setRawImageSize(size);
+
+      const detected = await detectPaperCorners(img).catch(() => null);
+      const fallback: Corners = [
+        { x: 0, y: 0 },
+        { x: size.width, y: 0 },
+        { x: size.width, y: size.height },
+        { x: 0, y: size.height },
+      ];
+      setCorners(detected ?? fallback);
+      setImageStep("adjusting");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Couldn't process that photo.");
+      setImageStep("picker");
+    }
+  };
+
   const pickFile = (f: File | null) => {
     setError(null);
-    if (!f) {
-      setFile(null);
-      setPreviewUrl(null);
-      return;
-    }
+    if (!f) return;
     if (!ALLOWED_TYPES.has(f.type)) {
       setError("Unsupported file type.");
       return;
@@ -111,12 +180,28 @@ export default function AddCellModal({
       setError("File is too large (max 20MB).");
       return;
     }
-    setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
+    setRawFile(f);
+    runScan(f, false);
+  };
+
+  const confirmCrop = async (finalCorners: Corners) => {
+    if (!rawImageUrl) return;
+    setCorners(finalCorners);
+    setImageStep("scanning");
+    try {
+      const img = await loadImage(rawImageUrl);
+      const blob = await warpAndClean(img, finalCorners);
+      setProcessedBlob(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
+      setImageStep("ready");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Couldn't process that photo.");
+      setImageStep("adjusting");
+    }
   };
 
   const submitImage = async () => {
-    if (!file || !user || themeId == null) return;
+    if (!processedBlob || !user || themeId == null) return;
     setBusy(true);
     setError(null);
     try {
@@ -133,7 +218,7 @@ export default function AddCellModal({
           return;
         }
       }
-      const { full, thumbnail } = await resizeImageWithThumbnail(file);
+      const { full, thumbnail } = await resizeImageWithThumbnail(processedBlob);
       const cell = await insertImageCell({
         x,
         y,
@@ -257,15 +342,65 @@ export default function AddCellModal({
                 <p className="text-sm text-black/70 dark:text-white/70 py-4">
                   {DAILY_LIMIT_MESSAGE}
                 </p>
+              ) : imageStep === "sketchWarning" ? (
+                <div className="flex flex-col gap-3 py-4">
+                  <p className="text-sm text-black/70 dark:text-white/70">
+                    This doesn&rsquo;t look like a sketch or notebook page.
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={resetImageFlow}
+                      className="text-sm text-black/50 dark:text-white/50 hover:opacity-70"
+                    >
+                      Try another photo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rawFile && runScan(rawFile, true)}
+                      className="text-sm font-medium underline"
+                    >
+                      Use this photo anyway
+                    </button>
+                  </div>
+                </div>
+              ) : imageStep === "scanning" ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
+                  <span className="text-sm text-black/50 dark:text-white/50">
+                    Preparing scan…
+                  </span>
+                </div>
+              ) : imageStep === "adjusting" && rawImageUrl && rawImageSize && corners ? (
+                <div className="flex flex-col gap-3">
+                  <CropAdjuster
+                    imageUrl={rawImageUrl}
+                    imageWidth={rawImageSize.width}
+                    imageHeight={rawImageSize.height}
+                    initialCorners={corners}
+                    onConfirm={confirmCrop}
+                    onCancel={resetImageFlow}
+                  />
+                  {scanError && <p className="text-sm text-red-500">{scanError}</p>}
+                </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {previewUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={previewUrl}
-                      alt=""
-                      className="w-full aspect-square object-cover rounded-lg"
-                    />
+                  {imageStep === "ready" && previewUrl ? (
+                    <div className="flex flex-col gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewUrl}
+                        alt=""
+                        className="w-full aspect-square object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={resetImageFlow}
+                        className="text-xs text-black/50 dark:text-white/50 hover:opacity-70 self-start"
+                      >
+                        Start over
+                      </button>
+                    </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 aspect-square">
                       <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center">
@@ -342,7 +477,7 @@ export default function AddCellModal({
                   <button
                     type="button"
                     onClick={submitImage}
-                    disabled={!file || busy || themeId == null}
+                    disabled={!processedBlob || busy || themeId == null}
                     className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
                   >
                     {busy ? "Uploading…" : "Add image"}

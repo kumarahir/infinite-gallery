@@ -1,6 +1,22 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // @techstark/opencv-js is emscripten-generated code with a
+    // `require("fs")`/`require("path")`/`require("crypto")` guarded behind an
+    // `ENVIRONMENT_IS_NODE` check that's always false in the browser — dead
+    // code Turbopack still tries to statically resolve at build time.
+    // Webpack has `resolve.fallback: { fs: false, ... }` for this; Turbopack
+    // has no direct equivalent, so point these bare specifiers at a local
+    // empty stub instead (never actually called at runtime). Scoped to the
+    // `browser` condition only — Next.js itself uses the real `fs`/`path` in
+    // its own server-side code, and an unconditional alias broke prerendering.
+    resolveAlias: {
+      fs: { browser: "./src/lib/emptyNodeStub.js" },
+      path: { browser: "./src/lib/emptyNodeStub.js" },
+      crypto: { browser: "./src/lib/emptyNodeStub.js" },
+    },
+  },
   images: {
     remotePatterns: [
       {
