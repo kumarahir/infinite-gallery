@@ -163,8 +163,10 @@ export async function detectPaperCorners(img: HTMLImageElement): Promise<Corners
 // Perspective-warps the (possibly user-adjusted) quadrilateral into a
 // straight rectangle — this single step handles both cropping out
 // everything but the paper and correcting rotation/skew — then applies a
-// contrast-enhancement pass (CLAHE) so pen/pencil strokes read crisp against
-// a bright, even background.
+// contrast-enhancement pass so pen/pencil/marker strokes read crisp against
+// a bright, even background. CLAHE runs on the Lab color space's lightness
+// channel only (not a grayscale conversion) so colored sketches keep their
+// color instead of coming out black-and-white.
 export async function warpAndClean(img: HTMLImageElement, corners: Corners): Promise<Blob> {
   const cv = await loadOpenCv();
   const [topLeft, topRight, bottomRight, bottomLeft] = corners;
@@ -199,18 +201,27 @@ export async function warpAndClean(img: HTMLImageElement, corners: Corners): Pro
   ]);
   const transform = cv.getPerspectiveTransform(srcTri, dstTri);
   const warped = new cv.Mat();
-  const gray = new cv.Mat();
-  const enhanced = new cv.Mat();
+  const rgb = new cv.Mat();
+  const lab = new cv.Mat();
+  const channels = new cv.MatVector();
+  const enhancedL = new cv.Mat();
   const result = new cv.Mat();
   let clahe: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  let lChannel: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   let outCanvas: HTMLCanvasElement;
   try {
     cv.warpPerspective(src, warped, transform, new cv.Size(outWidth, outHeight));
-    cv.cvtColor(warped, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(warped, rgb, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(rgb, lab, cv.COLOR_RGB2Lab);
+    cv.split(lab, channels);
+    lChannel = channels.get(0);
     clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-    clahe.apply(gray, enhanced);
-    cv.cvtColor(enhanced, result, cv.COLOR_GRAY2RGBA);
+    clahe.apply(lChannel, enhancedL);
+    channels.set(0, enhancedL);
+    cv.merge(channels, lab);
+    cv.cvtColor(lab, rgb, cv.COLOR_Lab2RGB);
+    cv.cvtColor(rgb, result, cv.COLOR_RGB2RGBA);
 
     outCanvas = document.createElement("canvas");
     outCanvas.width = outWidth;
@@ -222,10 +233,13 @@ export async function warpAndClean(img: HTMLImageElement, corners: Corners): Pro
     dstTri.delete();
     transform.delete();
     warped.delete();
-    gray.delete();
-    enhanced.delete();
+    rgb.delete();
+    lab.delete();
+    channels.delete();
+    enhancedL.delete();
     result.delete();
     clahe?.delete();
+    lChannel?.delete();
   }
 
   return new Promise((resolve, reject) => {
