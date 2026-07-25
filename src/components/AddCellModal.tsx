@@ -403,13 +403,20 @@ export default function AddCellModal({
                 <div className="flex flex-col gap-3">
                   {imageStep === "cropped" && croppedPreviewUrl ? (
                     <div className="flex flex-col gap-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={enhanceOn && previewUrl ? previewUrl : croppedPreviewUrl}
-                        alt=""
-                        className="w-full aspect-square object-cover rounded-lg"
-                      />
-                      <div className="flex items-center justify-between">
+                      <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={enhanceOn && previewUrl ? previewUrl : croppedPreviewUrl}
+                          alt=""
+                          className="w-full aspect-square object-cover rounded-lg"
+                        />
+                        {enhancing && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+                            <div className="w-10 h-10 rounded-full border-4 border-white/30 border-t-white animate-spin" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
                         <span className="text-sm text-black/60 dark:text-white/60">
                           {enhancing ? "Enhancing…" : "Enhance"}
                         </span>
@@ -432,18 +439,18 @@ export default function AddCellModal({
                         </button>
                       </div>
                       {scanError && <p className="text-sm text-red-500">{scanError}</p>}
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
                         <button
                           type="button"
                           onClick={() => setImageStep("adjusting")}
-                          className="text-xs text-black/50 dark:text-white/50 hover:opacity-70"
+                          className="flex-1 rounded-lg border border-green-600 bg-stone-50 text-green-700 text-xs font-medium py-2 hover:bg-stone-100 dark:bg-white/5 dark:border-green-500 dark:text-green-400 dark:hover:bg-white/10"
                         >
                           Redo crop
                         </button>
                         <button
                           type="button"
                           onClick={resetImageFlow}
-                          className="text-xs text-black/50 dark:text-white/50 hover:opacity-70"
+                          className="flex-1 rounded-lg border border-green-600 bg-stone-50 text-green-700 text-xs font-medium py-2 hover:bg-stone-100 dark:bg-white/5 dark:border-green-500 dark:text-green-400 dark:hover:bg-white/10"
                         >
                           Start over
                         </button>
@@ -531,7 +538,7 @@ export default function AddCellModal({
                       busy ||
                       themeId == null
                     }
-                    className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
+                    className="rounded-lg bg-green-500 text-white text-sm font-medium py-2 disabled:opacity-40 hover:bg-green-600"
                   >
                     {busy ? "Uploading…" : "Add image"}
                   </button>
