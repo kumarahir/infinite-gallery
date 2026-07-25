@@ -285,33 +285,62 @@ function grayWorldWhiteBalance(cv: any, rgb: any): void {
   scaled.forEach((m) => m.delete());
 }
 
-// Estimates the page's background lighting via a large-kernel blur (wide
-// enough to average out pen strokes, narrow enough to still follow a
-// gradient or shadow's shape), then divides the original by that estimate —
-// this flattens uneven lighting across the page much more effectively than
-// CLAHE alone, which only reacts to *local* contrast and still leaves a
-// shadow's or gradient's broad light-to-dark sweep visible. Returns a new
-// Mat the caller must delete.
+// Estimates the page's background lighting, then divides the original by
+// that estimate — this flattens uneven lighting across the page much more
+// effectively than CLAHE alone, which only reacts to *local* contrast and
+// still leaves a shadow's or gradient's broad light-to-dark sweep visible.
+// The estimate itself comes from a morphological closing (dilate then
+// erode) rather than a plain Gaussian blur: a blur wide enough to smooth out
+// a shadow is *not* automatically wide enough to fully "erase" a thick
+// stroke or a large filled-in shape, so the background estimate ends up
+// partially tracking that ink too — dividing it out then leaves a visible
+// halo/patch around exactly those features. Closing with an elliptical
+// kernel wider than any realistic ink feature genuinely eliminates dark
+// shapes up to that width from the estimate, not just partially blurs them.
+// Returns a new Mat the caller must delete.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeight: number): any {
-  let k = Math.floor(Math.min(outWidth, outHeight) / 8);
+  // The closing kernel's *radius* (half its size) needs to comfortably
+  // exceed half the width of the largest realistic ink feature (a thick
+  // marker fill, a bold heading) — undersized here was exactly what produced
+  // visible glowing halos around large filled shapes: the kernel closed over
+  // most of the shape but not quite all of it, leaving a ring where the
+  // background estimate transitions between "true paper" and "still sees
+  // some of the shape" right at its edge.
+  let k = Math.floor(Math.min(outWidth, outHeight) / 2.5);
   if (k % 2 === 0) k += 1;
-  if (k < 5) k = 5;
+  if (k < 25) k = 25;
+
+  const closeKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(k, k));
+  const background = new cv.Mat();
+  cv.morphologyEx(lChannel, background, cv.MORPH_CLOSE, closeKernel);
+  // The closing operation's result is blocky at the scale of the kernel —
+  // a modest smoothing pass (much smaller than the closing kernel itself, so
+  // it doesn't reintroduce the same halo) turns it into a continuous field
+  // before dividing it out.
+  let smoothK = Math.floor(k / 5);
+  if (smoothK % 2 === 0) smoothK += 1;
+  if (smoothK < 5) smoothK = 5;
+  const smoothedBackground = new cv.Mat();
+  cv.GaussianBlur(background, smoothedBackground, new cv.Size(smoothK, smoothK), 0);
 
   const lFloat = new cv.Mat();
   lChannel.convertTo(lFloat, cv.CV_32F);
-  const background = new cv.Mat();
-  cv.GaussianBlur(lFloat, background, new cv.Size(k, k), 0);
-  const meanBackground = cv.mean(background)[0];
+  const bgFloat = new cv.Mat();
+  smoothedBackground.convertTo(bgFloat, cv.CV_32F);
+  const meanBackground = cv.mean(bgFloat)[0];
   const normalized = new cv.Mat();
   // scale=meanBackground rescales the ~1.0-centered ratio back up to the
   // page's own average brightness instead of leaving it near black.
-  cv.divide(lFloat, background, normalized, meanBackground);
+  cv.divide(lFloat, bgFloat, normalized, meanBackground);
   const result = new cv.Mat();
   normalized.convertTo(result, cv.CV_8U);
 
-  lFloat.delete();
+  closeKernel.delete();
   background.delete();
+  smoothedBackground.delete();
+  lFloat.delete();
+  bgFloat.delete();
   normalized.delete();
   return result;
 }
