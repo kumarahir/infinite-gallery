@@ -50,6 +50,19 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+// colorCorrectImage runs a long chain of synchronous OpenCV/WASM calls with
+// no internal yield back to the browser, which blocks the main thread for
+// the whole ~1-4s it takes — long enough that a state update made right
+// before calling it (e.g. showing a spinner) never actually gets painted to
+// the screen; the browser only paints once the call stack is empty, and it
+// never goes empty until that synchronous work finishes. Waiting two
+// animation frames guarantees a real paint happens first.
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 export default function AddCellModal({
   x,
   y,
@@ -192,6 +205,7 @@ export default function AddCellModal({
     setCorners(finalCorners);
     setScanError(null);
     setImageStep("cropping");
+    await waitForPaint();
     try {
       const img = await loadImage(rawImageUrl);
       const blob = await cropImage(img, finalCorners);
@@ -217,6 +231,7 @@ export default function AddCellModal({
     if (!next || processedBlob || !croppedPreviewUrl) return;
     setEnhancing(true);
     setScanError(null);
+    await waitForPaint();
     try {
       const img = await loadImage(croppedPreviewUrl);
       const blob = await colorCorrectImage(img);
@@ -417,7 +432,7 @@ export default function AddCellModal({
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-black/60 dark:text-white/60">
+                        <span className="text-sm text-black/60 dark:text-white/60 shrink-0">
                           {enhancing ? "Enhancing…" : "Enhance"}
                         </span>
                         <button
@@ -437,9 +452,6 @@ export default function AddCellModal({
                             }`}
                           />
                         </button>
-                      </div>
-                      {scanError && <p className="text-sm text-red-500">{scanError}</p>}
-                      <div className="flex items-center gap-3">
                         <button
                           type="button"
                           onClick={() => setImageStep("adjusting")}
@@ -455,6 +467,7 @@ export default function AddCellModal({
                           Start over
                         </button>
                       </div>
+                      {scanError && <p className="text-sm text-red-500">{scanError}</p>}
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 aspect-square">
