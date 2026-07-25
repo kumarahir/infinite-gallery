@@ -300,6 +300,24 @@ function grayWorldWhiteBalance(cv: any, rgb: any): void {
 // Returns a new Mat the caller must delete.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeight: number): any {
+  // The background lighting field is inherently low-frequency/smooth, so
+  // estimating it doesn't need full photo resolution — a real upload can
+  // easily be 3000-4000px on a side, and running a morphological closing
+  // with a kernel sized relative to *that* (the previous approach) meant an
+  // elliptical structuring element hundreds of pixels wide over a
+  // multi-megapixel image, which is prohibitively slow (this is what made
+  // "Confirm crop" appear to hang). Doing the estimate on a small downscaled
+  // copy keeps the cost constant regardless of the source photo's
+  // resolution, then upscaling the result back loses nothing since it has
+  // no fine detail to begin with.
+  const WORK_SIZE = 400;
+  const workScale = Math.min(1, WORK_SIZE / Math.min(outWidth, outHeight));
+  const workWidth = Math.max(1, Math.round(outWidth * workScale));
+  const workHeight = Math.max(1, Math.round(outHeight * workScale));
+
+  const small = new cv.Mat();
+  cv.resize(lChannel, small, new cv.Size(workWidth, workHeight), 0, 0, cv.INTER_AREA);
+
   // The closing kernel's *radius* (half its size) needs to comfortably
   // exceed half the width of the largest realistic ink feature (a thick
   // marker fill, a bold heading) — undersized here was exactly what produced
@@ -307,13 +325,13 @@ function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeig
   // most of the shape but not quite all of it, leaving a ring where the
   // background estimate transitions between "true paper" and "still sees
   // some of the shape" right at its edge.
-  let k = Math.floor(Math.min(outWidth, outHeight) / 2.5);
+  let k = Math.floor(Math.min(workWidth, workHeight) / 2.5);
   if (k % 2 === 0) k += 1;
-  if (k < 25) k = 25;
+  if (k < 15) k = 15;
 
   const closeKernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(k, k));
-  const background = new cv.Mat();
-  cv.morphologyEx(lChannel, background, cv.MORPH_CLOSE, closeKernel);
+  const closedSmall = new cv.Mat();
+  cv.morphologyEx(small, closedSmall, cv.MORPH_CLOSE, closeKernel);
   // The closing operation's result is blocky at the scale of the kernel —
   // a modest smoothing pass (much smaller than the closing kernel itself, so
   // it doesn't reintroduce the same halo) turns it into a continuous field
@@ -321,13 +339,16 @@ function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeig
   let smoothK = Math.floor(k / 5);
   if (smoothK % 2 === 0) smoothK += 1;
   if (smoothK < 5) smoothK = 5;
-  const smoothedBackground = new cv.Mat();
-  cv.GaussianBlur(background, smoothedBackground, new cv.Size(smoothK, smoothK), 0);
+  const smoothedSmall = new cv.Mat();
+  cv.GaussianBlur(closedSmall, smoothedSmall, new cv.Size(smoothK, smoothK), 0);
+
+  const background = new cv.Mat();
+  cv.resize(smoothedSmall, background, new cv.Size(outWidth, outHeight), 0, 0, cv.INTER_LINEAR);
 
   const lFloat = new cv.Mat();
   lChannel.convertTo(lFloat, cv.CV_32F);
   const bgFloat = new cv.Mat();
-  smoothedBackground.convertTo(bgFloat, cv.CV_32F);
+  background.convertTo(bgFloat, cv.CV_32F);
   const meanBackground = cv.mean(bgFloat)[0];
   const normalized = new cv.Mat();
   // scale=meanBackground rescales the ~1.0-centered ratio back up to the
@@ -336,9 +357,11 @@ function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeig
   const result = new cv.Mat();
   normalized.convertTo(result, cv.CV_8U);
 
+  small.delete();
   closeKernel.delete();
+  closedSmall.delete();
+  smoothedSmall.delete();
   background.delete();
-  smoothedBackground.delete();
   lFloat.delete();
   bgFloat.delete();
   normalized.delete();
