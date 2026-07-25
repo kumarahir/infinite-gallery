@@ -476,9 +476,12 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [handleZoomStep]
   );
 
-  // Single toggle button: below the default size, the next tap zooms back
-  // up to it; at the default, the next tap zooms down one step.
-  const isZoomedOut = zoomIndex < DEFAULT_ZOOM_INDEX;
+  // Single toggle button between the two zoom steps: at the smallest step,
+  // the next tap zooms up one step; otherwise the next tap zooms back down
+  // to the smallest step. Defined relative to the array's own bounds (not
+  // DEFAULT_ZOOM_INDEX) so this stays correct no matter which step is the
+  // default.
+  const isZoomedOut = zoomIndex === 0;
   const toggleZoom = useCallback(() => {
     zoomAtCenter(isZoomedOut ? 1 : -1);
   }, [zoomAtCenter, isZoomedOut]);
