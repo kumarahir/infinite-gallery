@@ -258,29 +258,90 @@ export async function detectPaperCorners(img: HTMLImageElement): Promise<Corners
   return result;
 }
 
-// Scales each RGB channel so its mean matches the overall gray mean (the
-// "gray-world" assumption) — neutralizes warm/cool color casts from indoor
-// lighting. Reasonable here specifically because paper dominates the frame
-// after cropping, so the frame's average color really should be close to
-// neutral. Mutates `rgb` in place. The correction is clamped so a very
-// strong single-channel cast doesn't get overcorrected into visible noise.
+// Finds the pixel values below which loPct% and hiPct% of `data` falls —
+// e.g. channelPercentiles(data, 0.5, 99.5) returns the value at the 0.5th
+// and 99.5th percentiles. Clipping a small fraction at each end (rather than
+// the literal min/max) keeps a handful of outlier noise pixels from
+// anchoring the stretch in autoLevelsPerChannel below.
+function channelPercentiles(
+  data: Uint8Array,
+  loPct: number,
+  hiPct: number
+): { lo: number; hi: number } {
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < data.length; i++) hist[data[i]]++;
+  const total = data.length;
+  const loThreshold = total * (loPct / 100);
+  const hiThreshold = total * (hiPct / 100);
+  let cum = 0;
+  let lo = 0;
+  for (let v = 0; v < 256; v++) {
+    cum += hist[v];
+    if (cum >= loThreshold) {
+      lo = v;
+      break;
+    }
+  }
+  cum = 0;
+  let hi = 255;
+  for (let v = 0; v < 256; v++) {
+    cum += hist[v];
+    if (cum >= hiThreshold) {
+      hi = v;
+      break;
+    }
+  }
+  if (hi <= lo) {
+    lo = 0;
+    hi = 255;
+  }
+  return { lo, hi };
+}
+
+// The classic "Levels" trick for cleaning up a photographed sketch: pick a
+// black point and a white point per channel and stretch everything between
+// them to the full 0-255 range — the same principle as manually clicking
+// Photoshop's black/white eyedroppers on the darkest ink and brightest paper,
+// done automatically via histogram percentiles instead. Doing this
+// independently per RGB channel is what removes a color cast (a channel
+// that reads dim overall because of a warm/cool light gets stretched to the
+// same full range as the others) while simultaneously maximizing contrast in
+// one pass. Mutates `rgb` in place.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function grayWorldWhiteBalance(cv: any, rgb: any): void {
+function autoLevelsPerChannel(cv: any, rgb: any): void {
+  // Percentiles are computed from a small downscaled copy — a histogram
+  // doesn't need full photo resolution to be representative, and this keeps
+  // the cost constant regardless of the source photo's size.
+  const WORK_SIZE = 300;
+  const workScale = Math.min(1, WORK_SIZE / Math.min(rgb.rows, rgb.cols));
+  const workWidth = Math.max(1, Math.round(rgb.cols * workScale));
+  const workHeight = Math.max(1, Math.round(rgb.rows * workScale));
+  const small = new cv.Mat();
+  cv.resize(rgb, small, new cv.Size(workWidth, workHeight), 0, 0, cv.INTER_AREA);
+  const smallChannels = new cv.MatVector();
+  cv.split(small, smallChannels);
+
   const channels = new cv.MatVector();
   cv.split(rgb, channels);
-  const means = [0, 1, 2].map((i) => cv.mean(channels.get(i))[0]);
-  const gray = (means[0] + means[1] + means[2]) / 3;
   const scaled = [];
   for (let i = 0; i < 3; i++) {
+    const smallChannel = smallChannels.get(i);
+    const { lo, hi } = channelPercentiles(smallChannel.data, 0.5, 99.5);
+    smallChannel.delete();
+
     const channel = channels.get(i);
-    const scale = Math.min(1.5, Math.max(0.67, gray / Math.max(1, means[i])));
+    const alpha = 255 / (hi - lo);
+    const beta = -lo * alpha;
     const out = new cv.Mat();
-    channel.convertTo(out, -1, scale, 0);
+    channel.convertTo(out, -1, alpha, beta);
     channels.set(i, out);
     scaled.push(out);
     channel.delete();
   }
   cv.merge(channels, rgb);
+
+  small.delete();
+  smallChannels.delete();
   channels.delete();
   scaled.forEach((m) => m.delete());
 }
@@ -369,15 +430,13 @@ function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeig
 }
 
 // Perspective-warps the (possibly user-adjusted) quadrilateral into a
-// straight rectangle — this single step handles both cropping out
-// everything but the paper and correcting rotation/skew — then cleans up
-// the result: gray-world white balance corrects color casts, a bilateral
-// filter suppresses sensor noise while preserving stroke edges, illumination
-// normalization flattens gradients/shadows, and CLAHE adds a final local
-// contrast punch. The white balance and contrast steps operate on RGB/Lab's
-// color and lightness channels respectively — never a grayscale conversion —
-// so colored sketches keep their color.
-export async function warpAndClean(img: HTMLImageElement, corners: Corners): Promise<Blob> {
+// straight rectangle — a single step that handles both cropping out
+// everything but the paper and correcting rotation/skew. Deliberately does
+// no color/contrast work: cropping and color-correcting are separate steps
+// in the upload flow (the user reviews the crop before enhancing colors),
+// and keeping this function crop-only means re-running just the warp (e.g.
+// after dragging a corner) never re-runs the more expensive cleanup pass.
+export async function cropImage(img: HTMLImageElement, corners: Corners): Promise<Blob> {
   const cv = await loadOpenCv();
   const [topLeft, topRight, bottomRight, bottomLeft] = corners;
 
@@ -411,6 +470,44 @@ export async function warpAndClean(img: HTMLImageElement, corners: Corners): Pro
   ]);
   const transform = cv.getPerspectiveTransform(srcTri, dstTri);
   const warped = new cv.Mat();
+
+  let outCanvas: HTMLCanvasElement;
+  try {
+    cv.warpPerspective(src, warped, transform, new cv.Size(outWidth, outHeight));
+    outCanvas = document.createElement("canvas");
+    outCanvas.width = outWidth;
+    outCanvas.height = outHeight;
+    cv.imshow(outCanvas, warped);
+  } finally {
+    src.delete();
+    srcTri.delete();
+    dstTri.delete();
+    transform.delete();
+    warped.delete();
+  }
+
+  return new Promise((resolve, reject) => {
+    outCanvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Failed to encode the cropped image."));
+    }, "image/webp", 0.95);
+  });
+}
+
+// Cleans up an already-cropped photo: per-channel auto-levels (the
+// black-point/white-point "Levels" technique — see comment on
+// autoLevelsPerChannel above) corrects color casts and maximizes contrast, a
+// bilateral filter suppresses sensor noise while preserving stroke edges,
+// illumination normalization flattens gradients/shadows, and CLAHE adds a
+// final local contrast punch. The auto-levels and contrast steps operate on
+// RGB/Lab's color and lightness channels respectively — never a grayscale
+// conversion — so colored sketches keep their color.
+export async function colorCorrectImage(img: HTMLImageElement): Promise<Blob> {
+  const cv = await loadOpenCv();
+  const outWidth = img.naturalWidth;
+  const outHeight = img.naturalHeight;
+
+  const src = cv.imread(img);
   const rgb = new cv.Mat();
   const denoisedRgb = new cv.Mat();
   const lab = new cv.Mat();
@@ -424,9 +521,8 @@ export async function warpAndClean(img: HTMLImageElement, corners: Corners): Pro
 
   let outCanvas: HTMLCanvasElement;
   try {
-    cv.warpPerspective(src, warped, transform, new cv.Size(outWidth, outHeight));
-    cv.cvtColor(warped, rgb, cv.COLOR_RGBA2RGB);
-    grayWorldWhiteBalance(cv, rgb);
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    autoLevelsPerChannel(cv, rgb);
     // d=7 keeps this fast (a bounded, one-shot per-upload operation); sigma
     // values are large enough to smooth sensor grain but small enough that
     // strong stroke/text edges still survive.
@@ -448,10 +544,6 @@ export async function warpAndClean(img: HTMLImageElement, corners: Corners): Pro
     cv.imshow(outCanvas, result);
   } finally {
     src.delete();
-    srcTri.delete();
-    dstTri.delete();
-    transform.delete();
-    warped.delete();
     rgb.delete();
     denoisedRgb.delete();
     lab.delete();

@@ -16,7 +16,13 @@ import {
 } from "@/lib/cells";
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImageWithThumbnail } from "@/lib/resizeImage";
-import { detectPaperCorners, looksLikeSketch, warpAndClean, type Corners } from "@/lib/scanDocument";
+import {
+  colorCorrectImage,
+  cropImage,
+  detectPaperCorners,
+  looksLikeSketch,
+  type Corners,
+} from "@/lib/scanDocument";
 import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
 
@@ -35,7 +41,20 @@ const ADMIN_EMAIL = "kumar.ahir@gmail.com";
 
 // Drives what the "image" tab shows, between picking a file and having a
 // final processed image ready to submit alongside the theme picker.
-type ImageStep = "picker" | "sketchWarning" | "scanning" | "adjusting" | "ready";
+// Cropping and color-correcting are deliberately separate steps ("cropped"
+// shows the crop-only result and waits for the user to confirm before
+// "correcting" runs) rather than one combined operation, so a bad crop is
+// caught before spending time enhancing it, and the user can see exactly
+// what each step changed.
+type ImageStep =
+  | "picker"
+  | "sketchWarning"
+  | "scanning"
+  | "adjusting"
+  | "cropping"
+  | "cropped"
+  | "correcting"
+  | "ready";
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -70,6 +89,8 @@ export default function AddCellModal({
     null
   );
   const [corners, setCorners] = useState<Corners | null>(null);
+  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
+  const [croppedPreviewUrl, setCroppedPreviewUrl] = useState<string | null>(null);
   const [processedBlob, setProcessedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -128,6 +149,8 @@ export default function AddCellModal({
     setRawImageUrl(null);
     setRawImageSize(null);
     setCorners(null);
+    setCroppedBlob(null);
+    setCroppedPreviewUrl(null);
     setProcessedBlob(null);
     setPreviewUrl(null);
     setScanError(null);
@@ -187,16 +210,33 @@ export default function AddCellModal({
   const confirmCrop = async (finalCorners: Corners) => {
     if (!rawImageUrl) return;
     setCorners(finalCorners);
-    setImageStep("scanning");
+    setScanError(null);
+    setImageStep("cropping");
     try {
       const img = await loadImage(rawImageUrl);
-      const blob = await warpAndClean(img, finalCorners);
+      const blob = await cropImage(img, finalCorners);
+      setCroppedBlob(blob);
+      setCroppedPreviewUrl(URL.createObjectURL(blob));
+      setImageStep("cropped");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Couldn't crop that photo.");
+      setImageStep("adjusting");
+    }
+  };
+
+  const runColorCorrection = async () => {
+    if (!croppedPreviewUrl) return;
+    setScanError(null);
+    setImageStep("correcting");
+    try {
+      const img = await loadImage(croppedPreviewUrl);
+      const blob = await colorCorrectImage(img);
       setProcessedBlob(blob);
       setPreviewUrl(URL.createObjectURL(blob));
       setImageStep("ready");
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Couldn't process that photo.");
-      setImageStep("adjusting");
+      setScanError(err instanceof Error ? err.message : "Couldn't enhance that photo.");
+      setImageStep("cropped");
     }
   };
 
@@ -371,6 +411,18 @@ export default function AddCellModal({
                     Preparing scan…
                   </span>
                 </div>
+              ) : imageStep === "cropping" ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
+                  <span className="text-sm text-black/50 dark:text-white/50">Cropping…</span>
+                </div>
+              ) : imageStep === "correcting" ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
+                  <span className="text-sm text-black/50 dark:text-white/50">
+                    Enhancing colors…
+                  </span>
+                </div>
               ) : imageStep === "adjusting" && rawImageUrl && rawImageSize && corners ? (
                 <div className="flex flex-col gap-3">
                   <CropAdjuster
@@ -382,6 +434,35 @@ export default function AddCellModal({
                     onCancel={resetImageFlow}
                   />
                   {scanError && <p className="text-sm text-red-500">{scanError}</p>}
+                </div>
+              ) : imageStep === "cropped" && croppedPreviewUrl ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-black/60 dark:text-white/60">
+                    Cropped. Enhance colors and contrast next, or redo the crop.
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={croppedPreviewUrl}
+                    alt=""
+                    className="w-full rounded-lg border border-black/10 dark:border-white/15"
+                  />
+                  {scanError && <p className="text-sm text-red-500">{scanError}</p>}
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setImageStep("adjusting")}
+                      className="text-sm text-black/50 dark:text-white/50 hover:opacity-70"
+                    >
+                      Redo crop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={runColorCorrection}
+                      className="rounded-lg bg-foreground text-background text-sm font-medium px-4 py-2 hover:opacity-90"
+                    >
+                      Enhance
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
