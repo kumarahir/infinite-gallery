@@ -4,6 +4,10 @@ import { useRef, useState } from "react";
 import type { Corners, Point } from "@/lib/scanDocument";
 
 const DISPLAY_WIDTH = 320;
+// Corner handles are centered exactly on the photo's edges/corners, so
+// without this margin half of each handle would render outside the photo
+// area and get clipped, leaving a thin, hard-to-grab sliver.
+const HANDLE_MARGIN = 18;
 
 export default function CropAdjuster({
   imageUrl,
@@ -46,8 +50,8 @@ export default function CropAdjuster({
   const onPointerMove = (e: React.PointerEvent) => {
     if (draggingIndex.current == null || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = Math.min(Math.max(e.clientX - rect.left, 0), DISPLAY_WIDTH);
-    const y = Math.min(Math.max(e.clientY - rect.top, 0), displayHeight);
+    const x = Math.min(Math.max(e.clientX - rect.left - HANDLE_MARGIN, 0), DISPLAY_WIDTH);
+    const y = Math.min(Math.max(e.clientY - rect.top - HANDLE_MARGIN, 0), displayHeight);
     const index = draggingIndex.current;
     setCorners((prev) => {
       const next = [...prev] as Corners;
@@ -67,44 +71,57 @@ export default function CropAdjuster({
       </p>
       <div
         ref={containerRef}
-        className="relative touch-none select-none mx-auto rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
-        style={{ width: DISPLAY_WIDTH, height: displayHeight }}
+        className="relative touch-none select-none mx-auto"
+        style={{
+          width: DISPLAY_WIDTH + HANDLE_MARGIN * 2,
+          height: displayHeight + HANDLE_MARGIN * 2,
+        }}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerLeave={endDrag}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt=""
-          draggable={false}
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-        />
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          width={DISPLAY_WIDTH}
-          height={displayHeight}
+        <div
+          className="absolute rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
+          style={{
+            left: HANDLE_MARGIN,
+            top: HANDLE_MARGIN,
+            width: DISPLAY_WIDTH,
+            height: displayHeight,
+          }}
         >
-          <polygon
-            points={corners
-              .map((c) => {
-                const d = toDisplay(c);
-                return `${d.x},${d.y}`;
-              })
-              .join(" ")}
-            fill="rgba(59,130,246,0.2)"
-            stroke="rgb(59,130,246)"
-            strokeWidth={2}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
-        </svg>
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            width={DISPLAY_WIDTH}
+            height={displayHeight}
+          >
+            <polygon
+              points={corners
+                .map((c) => {
+                  const d = toDisplay(c);
+                  return `${d.x},${d.y}`;
+                })
+                .join(" ")}
+              fill="rgba(59,130,246,0.2)"
+              stroke="rgb(59,130,246)"
+              strokeWidth={2}
+            />
+          </svg>
+        </div>
         {corners.map((corner, i) => {
           const d = toDisplay(corner);
           return (
             <div
               key={i}
               onPointerDown={startDrag(i)}
-              className="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md cursor-grab touch-none"
-              style={{ left: d.x, top: d.y }}
+              className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md cursor-grab touch-none"
+              style={{ left: d.x + HANDLE_MARGIN, top: d.y + HANDLE_MARGIN }}
             />
           );
         })}
