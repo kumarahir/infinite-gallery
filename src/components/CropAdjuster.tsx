@@ -1,9 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Corners, Point } from "@/lib/scanDocument";
 
-const DISPLAY_WIDTH = 320;
+// Used only until the wrapper's actual rendered width is measured on mount.
+const FALLBACK_DISPLAY_WIDTH = 320;
+// Caps how large the photo area gets on wide screens — otherwise it'd just
+// keep growing to fill a full desktop-width modal.
+const MAX_DISPLAY_WIDTH = 480;
 // Corner handles are centered exactly on the photo's edges/corners, so
 // without this margin half of each handle would render outside the photo
 // area and get clipped, leaving a thin, hard-to-grab sliver.
@@ -25,13 +29,33 @@ export default function CropAdjuster({
   onCancel: () => void;
 }) {
   const [corners, setCorners] = useState<Corners>(initialCorners);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingIndex = useRef<number | null>(null);
+  // Sized off the wrapper's *actual* rendered width rather than a fixed
+  // constant — a hardcoded pixel width doesn't know how much room the
+  // surrounding modal actually has (it varies by device/viewport), and when
+  // it doesn't fit, a centered fixed-width box overflows off the right edge
+  // of the screen instead of shrinking to fit.
+  const [displayWidth, setDisplayWidth] = useState(FALLBACK_DISPLAY_WIDTH);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const measure = () => {
+      const available = wrapper.clientWidth - HANDLE_MARGIN * 2;
+      setDisplayWidth(Math.max(100, Math.min(MAX_DISPLAY_WIDTH, available)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
 
   // Corners are always stored in the original image's own pixel space (what
   // warpAndClean needs) — only scaled for on-screen display, and unscaled
   // again on every drag update.
-  const scale = DISPLAY_WIDTH / imageWidth;
+  const scale = displayWidth / imageWidth;
   const displayHeight = imageHeight * scale;
   const toDisplay = (p: Point) => ({ x: p.x * scale, y: p.y * scale });
   const toImage = (x: number, y: number): Point => ({ x: x / scale, y: y / scale });
@@ -50,7 +74,7 @@ export default function CropAdjuster({
   const onPointerMove = (e: React.PointerEvent) => {
     if (draggingIndex.current == null || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = Math.min(Math.max(e.clientX - rect.left - HANDLE_MARGIN, 0), DISPLAY_WIDTH);
+    const x = Math.min(Math.max(e.clientX - rect.left - HANDLE_MARGIN, 0), displayWidth);
     const y = Math.min(Math.max(e.clientY - rect.top - HANDLE_MARGIN, 0), displayHeight);
     const index = draggingIndex.current;
     setCorners((prev) => {
@@ -69,62 +93,64 @@ export default function CropAdjuster({
       <p className="text-sm text-black/60 dark:text-white/60">
         Drag the corners to match the edges of your page.
       </p>
-      <div
-        ref={containerRef}
-        className="relative touch-none select-none mx-auto"
-        style={{
-          width: DISPLAY_WIDTH + HANDLE_MARGIN * 2,
-          height: displayHeight + HANDLE_MARGIN * 2,
-        }}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerLeave={endDrag}
-      >
+      <div ref={wrapperRef} className="w-full">
         <div
-          className="absolute rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
+          ref={containerRef}
+          className="relative touch-none select-none mx-auto"
           style={{
-            left: HANDLE_MARGIN,
-            top: HANDLE_MARGIN,
-            width: DISPLAY_WIDTH,
-            height: displayHeight,
+            width: displayWidth + HANDLE_MARGIN * 2,
+            height: displayHeight + HANDLE_MARGIN * 2,
           }}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerLeave={endDrag}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageUrl}
-            alt=""
-            draggable={false}
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-          />
-          <svg
-            className="absolute inset-0 pointer-events-none"
-            width={DISPLAY_WIDTH}
-            height={displayHeight}
+          <div
+            className="absolute rounded-lg overflow-hidden bg-black/5 dark:bg-white/5"
+            style={{
+              left: HANDLE_MARGIN,
+              top: HANDLE_MARGIN,
+              width: displayWidth,
+              height: displayHeight,
+            }}
           >
-            <polygon
-              points={corners
-                .map((c) => {
-                  const d = toDisplay(c);
-                  return `${d.x},${d.y}`;
-                })
-                .join(" ")}
-              fill="rgba(59,130,246,0.2)"
-              stroke="rgb(59,130,246)"
-              strokeWidth={2}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              draggable={false}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
             />
-          </svg>
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              width={displayWidth}
+              height={displayHeight}
+            >
+              <polygon
+                points={corners
+                  .map((c) => {
+                    const d = toDisplay(c);
+                    return `${d.x},${d.y}`;
+                  })
+                  .join(" ")}
+                fill="rgba(59,130,246,0.2)"
+                stroke="rgb(59,130,246)"
+                strokeWidth={2}
+              />
+            </svg>
+          </div>
+          {corners.map((corner, i) => {
+            const d = toDisplay(corner);
+            return (
+              <div
+                key={i}
+                onPointerDown={startDrag(i)}
+                className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md cursor-grab touch-none"
+                style={{ left: d.x + HANDLE_MARGIN, top: d.y + HANDLE_MARGIN }}
+              />
+            );
+          })}
         </div>
-        {corners.map((corner, i) => {
-          const d = toDisplay(corner);
-          return (
-            <div
-              key={i}
-              onPointerDown={startDrag(i)}
-              className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500 border-2 border-white shadow-md cursor-grab touch-none"
-              style={{ left: d.x + HANDLE_MARGIN, top: d.y + HANDLE_MARGIN }}
-            />
-          );
-        })}
       </div>
       <div className="flex items-center justify-between gap-3">
         <button
