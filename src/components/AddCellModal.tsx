@@ -34,20 +34,12 @@ const DAILY_LIMIT_MESSAGE = `You've reached today's limit of ${DAILY_IMAGE_LIMIT
 const ADMIN_EMAIL = "kumar.ahir@gmail.com";
 
 // Drives what the "image" tab shows, between picking a file and having a
-// final processed image ready to submit alongside the theme picker.
-// Cropping and color-correcting are deliberately separate steps ("cropped"
-// shows the crop-only result and waits for the user to confirm before
-// "correcting" runs) rather than one combined operation, so a bad crop is
-// caught before spending time enhancing it, and the user can see exactly
-// what each step changed.
-type ImageStep =
-  | "picker"
-  | "scanning"
-  | "adjusting"
-  | "cropping"
-  | "cropped"
-  | "correcting"
-  | "ready";
+// cropped image ready to submit alongside the theme picker. Cropping and
+// color-correcting are deliberately separate operations — "cropped" is the
+// single review step for both the plain crop and (once the user flips the
+// enhance toggle) the color-corrected result, so a bad crop is caught
+// before spending time enhancing it.
+type ImageStep = "picker" | "scanning" | "adjusting" | "cropping" | "cropped";
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -85,10 +77,12 @@ export default function AddCellModal({
   const [croppedPreviewUrl, setCroppedPreviewUrl] = useState<string | null>(null);
   const [processedBlob, setProcessedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  // Lets the user pick between the enhanced (color-corrected) result and the
-  // plain cropped original on the final review step — whichever is showing
-  // is what actually gets uploaded.
-  const [showOriginal, setShowOriginal] = useState(false);
+  // Off by default (showing the plain cropped original); flipping it on
+  // triggers color correction the first time and then just displays the
+  // cached result — whichever is showing when the user submits is what
+  // actually gets uploaded.
+  const [enhanceOn, setEnhanceOn] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
   const [text, setText] = useState("");
@@ -148,7 +142,8 @@ export default function AddCellModal({
     setCroppedPreviewUrl(null);
     setProcessedBlob(null);
     setPreviewUrl(null);
-    setShowOriginal(false);
+    setEnhanceOn(false);
+    setEnhancing(false);
     setScanError(null);
     setError(null);
   };
@@ -202,6 +197,10 @@ export default function AddCellModal({
       const blob = await cropImage(img, finalCorners);
       setCroppedBlob(blob);
       setCroppedPreviewUrl(URL.createObjectURL(blob));
+      // Redoing the crop invalidates whatever was enhanced from the old one.
+      setProcessedBlob(null);
+      setPreviewUrl(null);
+      setEnhanceOn(false);
       setImageStep("cropped");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Couldn't crop that photo.");
@@ -209,26 +208,32 @@ export default function AddCellModal({
     }
   };
 
-  const runColorCorrection = async () => {
-    if (!croppedPreviewUrl) return;
+  // The toggle itself is what triggers color correction — the first time
+  // it's flipped on, it runs colorCorrectImage and caches the result;
+  // flipping it on again (or off) afterward is instant.
+  const toggleEnhance = async () => {
+    const next = !enhanceOn;
+    setEnhanceOn(next);
+    if (!next || processedBlob || !croppedPreviewUrl) return;
+    setEnhancing(true);
     setScanError(null);
-    setImageStep("correcting");
     try {
       const img = await loadImage(croppedPreviewUrl);
       const blob = await colorCorrectImage(img);
       setProcessedBlob(blob);
       setPreviewUrl(URL.createObjectURL(blob));
-      setImageStep("ready");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Couldn't enhance that photo.");
-      setImageStep("cropped");
+      setEnhanceOn(false);
+    } finally {
+      setEnhancing(false);
     }
   };
 
   const submitImage = async () => {
-    // Uploads whichever version is currently toggled visible — enhanced by
-    // default, or the plain cropped original if the user switched to it.
-    const blobToUpload = showOriginal ? croppedBlob : processedBlob;
+    // Uploads whichever version is currently toggled visible — the enhanced
+    // result if the toggle is on and ready, otherwise the plain crop.
+    const blobToUpload = enhanceOn && processedBlob ? processedBlob : croppedBlob;
     if (!blobToUpload || !user || themeId == null) return;
     setBusy(true);
     setError(null);
@@ -382,13 +387,6 @@ export default function AddCellModal({
                   <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
                   <span className="text-sm text-black/50 dark:text-white/50">Cropping…</span>
                 </div>
-              ) : imageStep === "correcting" ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-8">
-                  <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
-                  <span className="text-sm text-black/50 dark:text-white/50">
-                    Enhancing colors…
-                  </span>
-                </div>
               ) : imageStep === "adjusting" && rawImageUrl && rawImageSize && corners ? (
                 <div className="flex flex-col gap-3">
                   <CropAdjuster
@@ -401,72 +399,55 @@ export default function AddCellModal({
                   />
                   {scanError && <p className="text-sm text-red-500">{scanError}</p>}
                 </div>
-              ) : imageStep === "cropped" && croppedPreviewUrl ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-black/60 dark:text-white/60">
-                    Cropped. Enhance colors and contrast next, or redo the crop.
-                  </p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={croppedPreviewUrl}
-                    alt=""
-                    className="w-full rounded-lg border border-black/10 dark:border-white/15"
-                  />
-                  {scanError && <p className="text-sm text-red-500">{scanError}</p>}
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setImageStep("adjusting")}
-                      className="text-sm text-black/50 dark:text-white/50 hover:opacity-70"
-                    >
-                      Redo crop
-                    </button>
-                    <button
-                      type="button"
-                      onClick={runColorCorrection}
-                      className="rounded-lg bg-foreground text-background text-sm font-medium px-4 py-2 hover:opacity-90"
-                    >
-                      Enhance
-                    </button>
-                  </div>
-                </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {imageStep === "ready" && previewUrl && croppedPreviewUrl ? (
+                  {imageStep === "cropped" && croppedPreviewUrl ? (
                     <div className="flex flex-col gap-2">
-                      <div className="flex rounded-lg bg-black/5 dark:bg-white/5 p-1 text-xs font-medium">
-                        <button
-                          type="button"
-                          onClick={() => setShowOriginal(false)}
-                          className={`flex-1 rounded-md py-1 transition-colors ${
-                            !showOriginal ? "bg-background shadow-sm" : "opacity-60"
-                          }`}
-                        >
-                          Enhanced
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowOriginal(true)}
-                          className={`flex-1 rounded-md py-1 transition-colors ${
-                            showOriginal ? "bg-background shadow-sm" : "opacity-60"
-                          }`}
-                        >
-                          Original
-                        </button>
-                      </div>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={showOriginal ? croppedPreviewUrl : previewUrl}
+                        src={enhanceOn && previewUrl ? previewUrl : croppedPreviewUrl}
                         alt=""
                         className="w-full aspect-square object-cover rounded-lg"
                       />
-                      <button
-                        type="button"
-                        onClick={resetImageFlow}
-                        className="text-xs text-black/50 dark:text-white/50 hover:opacity-70 self-start"
-                      >
-                        Start over
-                      </button>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-black/60 dark:text-white/60">
+                          {enhancing ? "Enhancing…" : "Enhance"}
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={enhanceOn}
+                          aria-label="Enhance image"
+                          onClick={toggleEnhance}
+                          disabled={enhancing}
+                          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+                            enhanceOn ? "bg-green-500" : "bg-black/15 dark:bg-white/20"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                              enhanceOn ? "translate-x-[22px]" : "translate-x-0.5"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                      {scanError && <p className="text-sm text-red-500">{scanError}</p>}
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setImageStep("adjusting")}
+                          className="text-xs text-black/50 dark:text-white/50 hover:opacity-70"
+                        >
+                          Redo crop
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetImageFlow}
+                          className="text-xs text-black/50 dark:text-white/50 hover:opacity-70"
+                        >
+                          Start over
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 aspect-square">
@@ -544,7 +525,12 @@ export default function AddCellModal({
                   <button
                     type="button"
                     onClick={submitImage}
-                    disabled={!(showOriginal ? croppedBlob : processedBlob) || busy || themeId == null}
+                    disabled={
+                      !(enhanceOn && processedBlob ? processedBlob : croppedBlob) ||
+                      enhancing ||
+                      busy ||
+                      themeId == null
+                    }
                     className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
                   >
                     {busy ? "Uploading…" : "Add image"}
