@@ -1,9 +1,8 @@
-// Client-side "document scanner" pipeline for sketch uploads: a cheap
-// heuristic check that a photo looks like a sketch/notebook page, paper-edge
-// detection (for an initial crop guess), and the perspective warp + cleanup
-// filter that actually produces the final image. OpenCV.js is only ever
-// loaded (dynamically, ~8-10MB) once a user is actually uploading an image —
-// never as part of the app's main bundle.
+// Client-side "document scanner" pipeline for sketch uploads: paper-edge
+// detection (for an initial crop guess) and a perspective-crop + cleanup
+// filter that produces the final image. OpenCV.js is only ever loaded
+// (dynamically, ~8-10MB) once a user is actually uploading an image — never
+// as part of the app's main bundle.
 
 export interface Point {
   x: number;
@@ -12,76 +11,6 @@ export interface Point {
 
 // Always ordered [top-left, top-right, bottom-right, bottom-left].
 export type Corners = [Point, Point, Point, Point];
-
-const PAPER_FRACTION_THRESHOLD = 0.3;
-const SAMPLE_SIZE = 100;
-// How close to the photo's own brightest pixels a pixel must be to count as
-// "paper", and the absolute floor below which we don't trust that reference
-// at all (a photo with no bright region anywhere is almost certainly not a
-// paper photo, regardless of the relative math below).
-const RELATIVE_BRIGHTNESS_FACTOR = 0.75;
-const MIN_BRIGHT_REFERENCE = 0.25;
-const SATURATION_THRESHOLD = 0.45;
-
-// Fast, free, and approximate — downscales onto a tiny canvas and checks how
-// much of the photo is "paper-like". Rather than a fixed absolute
-// brightness/saturation cutoff, "paper-like" is judged relative to the
-// photo's own brightest pixels: paper is always the brightest, least
-// saturated thing in a notebook photo relative to *itself*, even when the
-// shot is dim, overexposed, or has a warm/cool color cast that shifts its
-// absolute brightness or hue. This will still have false negatives (e.g. a
-// photo with no bright region at all) — callers should offer an override
-// rather than hard-block.
-export async function looksLikeSketch(file: File): Promise<boolean> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, SAMPLE_SIZE / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return true; // fail open — don't block uploads over an environment quirk
-
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  const { data } = ctx.getImageData(0, 0, width, height);
-
-  const totalPixels = width * height;
-  const lightness = new Float32Array(totalPixels);
-  const saturation = new Float32Array(totalPixels);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const l = (max + min) / 2 / 255;
-    lightness[p] = l;
-    saturation[p] = max === min ? 0 : (max - min) / 255 / (1 - Math.abs(2 * l - 1));
-  }
-
-  const sortedLightness = Array.from(lightness).sort((a, b) => a - b);
-  const brightRef = sortedLightness[Math.floor(totalPixels * 0.85)];
-  // No plausibly-bright region anywhere in the frame (e.g. a photo with the
-  // lens covered, or of a uniformly dark object) — there's no "paper" to
-  // find, so don't let the relative math below treat the least-dark pixels
-  // as if they were paper.
-  if (brightRef < MIN_BRIGHT_REFERENCE) return false;
-
-  let paperLikeCount = 0;
-  for (let p = 0; p < totalPixels; p++) {
-    if (
-      lightness[p] > brightRef * RELATIVE_BRIGHTNESS_FACTOR &&
-      saturation[p] < SATURATION_THRESHOLD
-    ) {
-      paperLikeCount++;
-    }
-  }
-
-  return paperLikeCount / totalPixels > PAPER_FRACTION_THRESHOLD;
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let cvPromise: Promise<any> | null = null;
@@ -410,11 +339,16 @@ function normalizeIllumination(cv: any, lChannel: any, outWidth: number, outHeig
   lChannel.convertTo(lFloat, cv.CV_32F);
   const bgFloat = new cv.Mat();
   background.convertTo(bgFloat, cv.CV_32F);
-  const meanBackground = cv.mean(bgFloat)[0];
   const normalized = new cv.Mat();
-  // scale=meanBackground rescales the ~1.0-centered ratio back up to the
-  // page's own average brightness instead of leaving it near black.
-  cv.divide(lFloat, bgFloat, normalized, meanBackground);
+  // scale=255 (not the photo's own average brightness) is what makes the
+  // background genuinely white: wherever a pixel matches the local
+  // background estimate, L/background = 1, times 255 = pure white. Ink
+  // (darker than the local background) stays proportionally darker. Scaling
+  // by the photo's own average instead (the previous approach) just
+  // preserved whatever off-white/gray level the paper happened to be
+  // photographed at, which is why the result never looked like a clean
+  // scan.
+  cv.divide(lFloat, bgFloat, normalized, 255);
   const result = new cv.Mat();
   normalized.convertTo(result, cv.CV_8U);
 
@@ -494,14 +428,19 @@ export async function cropImage(img: HTMLImageElement, corners: Corners): Promis
   });
 }
 
-// Cleans up an already-cropped photo: per-channel auto-levels (the
+// Cleans up an already-cropped photo so it reads like a flatbed scan: two
+// complementary denoise passes reduce sensor noise/grain first (denoising
+// before the contrast steps below means noise doesn't get amplified along
+// with real detail — a local contrast tool like CLAHE would otherwise boost
+// leftover noise variance right along with real edges, which is why this
+// pipeline deliberately does *not* use CLAHE), per-channel auto-levels (the
 // black-point/white-point "Levels" technique — see comment on
-// autoLevelsPerChannel above) corrects color casts and maximizes contrast, a
-// bilateral filter suppresses sensor noise while preserving stroke edges,
-// illumination normalization flattens gradients/shadows, and CLAHE adds a
-// final local contrast punch. The auto-levels and contrast steps operate on
-// RGB/Lab's color and lightness channels respectively — never a grayscale
-// conversion — so colored sketches keep their color.
+// autoLevelsPerChannel above) corrects color casts and maximizes contrast,
+// and illumination normalization flattens gradients/shadows while pushing
+// the page's background to a genuinely clean white. The auto-levels and
+// illumination steps operate on RGB/Lab's color and lightness channels
+// respectively — never a grayscale conversion — so colored sketches keep
+// their color.
 export async function colorCorrectImage(img: HTMLImageElement): Promise<Blob> {
   const cv = await loadOpenCv();
   const outWidth = img.naturalWidth;
@@ -509,31 +448,32 @@ export async function colorCorrectImage(img: HTMLImageElement): Promise<Blob> {
 
   const src = cv.imread(img);
   const rgb = new cv.Mat();
+  const medianed = new cv.Mat();
   const denoisedRgb = new cv.Mat();
   const lab = new cv.Mat();
   const channels = new cv.MatVector();
-  const enhancedL = new cv.Mat();
   const rgbOut = new cv.Mat();
   const result = new cv.Mat();
-  let clahe: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
   let lChannel: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
   let normalizedL: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   let outCanvas: HTMLCanvasElement;
   try {
     cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
-    autoLevelsPerChannel(cv, rgb);
-    // d=7 keeps this fast (a bounded, one-shot per-upload operation); sigma
-    // values are large enough to smooth sensor grain but small enough that
-    // strong stroke/text edges still survive.
-    cv.bilateralFilter(rgb, denoisedRgb, 7, 45, 45);
+    // A median blur first knocks out per-pixel sensor grain (the kind of
+    // noise a bilateral filter alone tends to just soften rather than
+    // remove, since it isn't a smooth gradient it can slide along), then a
+    // bilateral filter smooths what's left while still respecting real
+    // stroke/text edges (it only blends pixels that already have similar
+    // color, so it won't blur a dark line into a white background).
+    cv.medianBlur(rgb, medianed, 5);
+    cv.bilateralFilter(medianed, denoisedRgb, 9, 60, 60);
+    autoLevelsPerChannel(cv, denoisedRgb);
     cv.cvtColor(denoisedRgb, lab, cv.COLOR_RGB2Lab);
     cv.split(lab, channels);
     lChannel = channels.get(0);
     normalizedL = normalizeIllumination(cv, lChannel, outWidth, outHeight);
-    clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-    clahe.apply(normalizedL, enhancedL);
-    channels.set(0, enhancedL);
+    channels.set(0, normalizedL);
     cv.merge(channels, lab);
     cv.cvtColor(lab, rgbOut, cv.COLOR_Lab2RGB);
     cv.cvtColor(rgbOut, result, cv.COLOR_RGB2RGBA);
@@ -545,13 +485,12 @@ export async function colorCorrectImage(img: HTMLImageElement): Promise<Blob> {
   } finally {
     src.delete();
     rgb.delete();
+    medianed.delete();
     denoisedRgb.delete();
     lab.delete();
     channels.delete();
-    enhancedL.delete();
     rgbOut.delete();
     result.delete();
-    clahe?.delete();
     lChannel?.delete();
     normalizedL?.delete();
   }

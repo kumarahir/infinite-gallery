@@ -16,13 +16,7 @@ import {
 } from "@/lib/cells";
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImageWithThumbnail } from "@/lib/resizeImage";
-import {
-  colorCorrectImage,
-  cropImage,
-  detectPaperCorners,
-  looksLikeSketch,
-  type Corners,
-} from "@/lib/scanDocument";
+import { colorCorrectImage, cropImage, detectPaperCorners, type Corners } from "@/lib/scanDocument";
 import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
 
@@ -48,7 +42,6 @@ const ADMIN_EMAIL = "kumar.ahir@gmail.com";
 // what each step changed.
 type ImageStep =
   | "picker"
-  | "sketchWarning"
   | "scanning"
   | "adjusting"
   | "cropping"
@@ -83,7 +76,6 @@ export default function AddCellModal({
   const [tab, setTab] = useState<"image" | "text">("image");
 
   const [imageStep, setImageStep] = useState<ImageStep>("picker");
-  const [rawFile, setRawFile] = useState<File | null>(null);
   const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
   const [rawImageSize, setRawImageSize] = useState<{ width: number; height: number } | null>(
     null
@@ -93,6 +85,10 @@ export default function AddCellModal({
   const [croppedPreviewUrl, setCroppedPreviewUrl] = useState<string | null>(null);
   const [processedBlob, setProcessedBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Lets the user pick between the enhanced (color-corrected) result and the
+  // plain cropped original on the final review step — whichever is showing
+  // is what actually gets uploaded.
+  const [showOriginal, setShowOriginal] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
   const [text, setText] = useState("");
@@ -145,7 +141,6 @@ export default function AddCellModal({
 
   const resetImageFlow = () => {
     setImageStep("picker");
-    setRawFile(null);
     setRawImageUrl(null);
     setRawImageSize(null);
     setCorners(null);
@@ -153,22 +148,13 @@ export default function AddCellModal({
     setCroppedPreviewUrl(null);
     setProcessedBlob(null);
     setPreviewUrl(null);
+    setShowOriginal(false);
     setScanError(null);
     setError(null);
   };
 
-  // skipSketchCheck lets "Use this photo anyway" bypass the heuristic on a
-  // photo it already rejected once, without re-running it.
-  const runScan = async (f: File, skipSketchCheck: boolean) => {
+  const runScan = async (f: File) => {
     setScanError(null);
-    if (!skipSketchCheck) {
-      const looksOk = await looksLikeSketch(f).catch(() => true); // fail open
-      if (!looksOk) {
-        setImageStep("sketchWarning");
-        return;
-      }
-    }
-
     setImageStep("scanning");
     try {
       const url = URL.createObjectURL(f);
@@ -203,8 +189,7 @@ export default function AddCellModal({
       setError("File is too large (max 20MB).");
       return;
     }
-    setRawFile(f);
-    runScan(f, false);
+    runScan(f);
   };
 
   const confirmCrop = async (finalCorners: Corners) => {
@@ -241,7 +226,10 @@ export default function AddCellModal({
   };
 
   const submitImage = async () => {
-    if (!processedBlob || !user || themeId == null) return;
+    // Uploads whichever version is currently toggled visible — enhanced by
+    // default, or the plain cropped original if the user switched to it.
+    const blobToUpload = showOriginal ? croppedBlob : processedBlob;
+    if (!blobToUpload || !user || themeId == null) return;
     setBusy(true);
     setError(null);
     try {
@@ -258,7 +246,7 @@ export default function AddCellModal({
           return;
         }
       }
-      const { full, thumbnail } = await resizeImageWithThumbnail(processedBlob);
+      const { full, thumbnail } = await resizeImageWithThumbnail(blobToUpload);
       const cell = await insertImageCell({
         x,
         y,
@@ -382,28 +370,6 @@ export default function AddCellModal({
                 <p className="text-sm text-black/70 dark:text-white/70 py-4">
                   {DAILY_LIMIT_MESSAGE}
                 </p>
-              ) : imageStep === "sketchWarning" ? (
-                <div className="flex flex-col gap-3 py-4">
-                  <p className="text-sm text-black/70 dark:text-white/70">
-                    This doesn&rsquo;t look like a sketch or notebook page.
-                  </p>
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={resetImageFlow}
-                      className="text-sm text-black/50 dark:text-white/50 hover:opacity-70"
-                    >
-                      Try another photo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rawFile && runScan(rawFile, true)}
-                      className="text-sm font-medium underline"
-                    >
-                      Use this photo anyway
-                    </button>
-                  </div>
-                </div>
               ) : imageStep === "scanning" ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-8">
                   <div className="w-6 h-6 rounded-full border-2 border-black/15 dark:border-white/15 border-t-black/60 dark:border-t-white/70 animate-spin" />
@@ -466,11 +432,31 @@ export default function AddCellModal({
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {imageStep === "ready" && previewUrl ? (
+                  {imageStep === "ready" && previewUrl && croppedPreviewUrl ? (
                     <div className="flex flex-col gap-2">
+                      <div className="flex rounded-lg bg-black/5 dark:bg-white/5 p-1 text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setShowOriginal(false)}
+                          className={`flex-1 rounded-md py-1 transition-colors ${
+                            !showOriginal ? "bg-background shadow-sm" : "opacity-60"
+                          }`}
+                        >
+                          Enhanced
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowOriginal(true)}
+                          className={`flex-1 rounded-md py-1 transition-colors ${
+                            showOriginal ? "bg-background shadow-sm" : "opacity-60"
+                          }`}
+                        >
+                          Original
+                        </button>
+                      </div>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={previewUrl}
+                        src={showOriginal ? croppedPreviewUrl : previewUrl}
                         alt=""
                         className="w-full aspect-square object-cover rounded-lg"
                       />
@@ -558,7 +544,7 @@ export default function AddCellModal({
                   <button
                     type="button"
                     onClick={submitImage}
-                    disabled={!processedBlob || busy || themeId == null}
+                    disabled={!(showOriginal ? croppedBlob : processedBlob) || busy || themeId == null}
                     className="rounded-lg bg-foreground text-background text-sm font-medium py-2 disabled:opacity-40 hover:opacity-90"
                   >
                     {busy ? "Uploading…" : "Add image"}
