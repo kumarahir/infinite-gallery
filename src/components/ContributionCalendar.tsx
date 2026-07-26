@@ -25,6 +25,37 @@ const LEVEL_CLASSES = [
 // by the caller (profile page).
 const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function dateOf(day: ContributionDay): Date {
+  // Dates are plain "YYYY-MM-DD" strings meant as UTC calendar days — the
+  // explicit T00:00:00Z avoids the browser's local timezone shifting which
+  // day (and therefore which date-of-month/month) a cell reads as.
+  return new Date(`${day.date}T00:00:00Z`);
+}
+
+// Labels a week row with a month name only when that week contains the 1st
+// of a month — matches GitHub's own convention of labeling only where a
+// month actually starts, rather than repeating the label on every row.
+function monthLabelForWeek(week: ContributionDay[]): string | null {
+  const firstOfMonth = week.find((day) => dateOf(day).getUTCDate() === 1);
+  if (!firstOfMonth) return null;
+  return MONTH_LABELS[dateOf(firstOfMonth).getUTCMonth()];
+}
+
 // Purely presentational — the caller (profile page) already produced one
 // entry per day covering the full range, aligned so `days` starts on a
 // Sunday, so this just needs to chunk it into 7-day week rows.
@@ -41,25 +72,35 @@ export default function ContributionCalendar({ days }: { days: ContributionDay[]
       </h2>
       <div className="overflow-x-auto">
         <div className="flex flex-col gap-[3px] w-max">
-          <div className="grid grid-cols-7 gap-[3px]">
-            {DAY_LABELS.map((label, i) => (
-              <div
-                key={i}
-                className="w-4 h-3 flex items-center justify-center text-[9px] leading-none text-black/40 dark:text-white/40"
-              >
-                {label}
-              </div>
-            ))}
+          <div className="flex items-center gap-[3px]">
+            <div className="w-8 shrink-0" />
+            <div className="grid grid-cols-7 gap-[3px]">
+              {DAY_LABELS.map((label, i) => (
+                <div
+                  key={i}
+                  className="w-6 h-6 flex items-center justify-center text-[9px] leading-none text-black/40 dark:text-white/40"
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
           </div>
           {weeks.map((week, i) => (
-            <div key={i} className="grid grid-cols-7 gap-[3px]">
-              {week.map((day) => (
-                <div
-                  key={day.date}
-                  title={`${day.date}: ${day.count} upload${day.count === 1 ? "" : "s"}`}
-                  className={`w-4 h-3 rounded-sm ${LEVEL_CLASSES[levelFor(day.count)]}`}
-                />
-              ))}
+            <div key={i} className="flex items-center gap-[3px]">
+              <div className="w-8 shrink-0 pr-1 text-right text-[9px] leading-none text-black/40 dark:text-white/40">
+                {monthLabelForWeek(week)}
+              </div>
+              <div className="grid grid-cols-7 gap-[3px]">
+                {week.map((day) => (
+                  <div
+                    key={day.date}
+                    title={`${day.date}: ${day.count} upload${day.count === 1 ? "" : "s"}`}
+                    className={`w-6 h-6 rounded-sm flex items-center justify-center text-[9px] leading-none text-black/60 dark:text-white/70 ${LEVEL_CLASSES[levelFor(day.count)]}`}
+                  >
+                    {dateOf(day).getUTCDate()}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
