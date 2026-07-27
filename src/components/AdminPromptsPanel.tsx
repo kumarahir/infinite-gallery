@@ -396,7 +396,8 @@ export default function AdminPromptsPanel() {
               ) : (
                 <li
                   key={p.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
+                  onClick={() => openEditForm(p)}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 >
                   <span className="text-sm">
                     Day {p.day_of_month} — {p.prompt_text}
@@ -404,15 +405,10 @@ export default function AdminPromptsPanel() {
                   <div className="flex items-center gap-3 shrink-0">
                     <button
                       type="button"
-                      onClick={() => openEditForm(p)}
-                      disabled={busy}
-                      className="text-xs font-medium text-black/50 dark:text-white/50 hover:opacity-70 disabled:opacity-40"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(p)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(p);
+                      }}
                       disabled={busy}
                       className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
                     >
