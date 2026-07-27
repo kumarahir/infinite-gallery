@@ -220,7 +220,7 @@ export default function LandingOverlay({
             onClick={onShuffle}
             className="flex-1 rounded-lg border border-green-600 dark:border-green-500 bg-stone-50 dark:bg-white/5 text-green-700 dark:text-green-400 text-xs font-medium py-2"
           >
-            Shuffle
+            Show random
           </button>
         </div>
 
@@ -229,7 +229,7 @@ export default function LandingOverlay({
           onClick={onClose}
           className="rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium py-2.5"
         >
-          Explore canvas
+          Explore
         </button>
       </div>
     </div>
