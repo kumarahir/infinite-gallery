@@ -106,6 +106,10 @@ export async function fetchCellsInRange(
 export interface CellFilter {
   onlyMine?: boolean;
   themeId?: number | null;
+  // Caps the result set — used by the landing overlay's theme preview
+  // (a handful of thumbnails), left unset for the real clustered/filtered
+  // browse mode which still wants every match.
+  limit?: number;
 }
 
 // Backs the clustered/filtered browse mode — always image cells (themes and
@@ -125,10 +129,51 @@ export async function fetchFilteredCells(filter: CellFilter, userId?: string): P
   if (filter.themeId != null) {
     query = query.eq("theme_id", filter.themeId);
   }
+  if (filter.limit != null) {
+    query = query.limit(filter.limit);
+  }
 
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as unknown as CellRow[];
+}
+
+// Lightweight head-count for the landing overlay's "this month's theme"
+// badge — a plain count query rather than fetchUploadCountsByTheme's
+// fetch-every-row approach, since this only ever needs one theme's total.
+export async function fetchThemeImageCount(themeId: number): Promise<number> {
+  const supabase = createClient();
+  const { count, error } = await supabase
+    .from("cells")
+    .select("id", { count: "exact", head: true })
+    .eq("cell_type", "image")
+    .eq("theme_id", themeId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// Backs the landing overlay's "consistent artists" thumbnails — one query
+// for every artist rather than one per card. Ordered newest-first so the
+// first row seen per user, kept via the Map's insert-if-absent below, is
+// their latest.
+export async function fetchLatestImageCellByUsers(
+  userIds: string[]
+): Promise<Map<string, CellRow>> {
+  if (userIds.length === 0) return new Map();
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cells")
+    .select(CELL_SELECT)
+    .eq("cell_type", "image")
+    .in("created_by", userIds)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const latest = new Map<string, CellRow>();
+  for (const row of (data ?? []) as unknown as CellRow[]) {
+    if (!latest.has(row.created_by)) latest.set(row.created_by, row);
+  }
+  return latest;
 }
 
 export class CellTakenError extends Error {

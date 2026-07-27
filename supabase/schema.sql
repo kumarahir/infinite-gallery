@@ -603,3 +603,31 @@ grant execute on function public.update_my_avatar(text) to authenticated;
 -- GridCell falls back to image_path for those (already correctly capped by
 -- the sizes/deviceSizes work from the previous migration).
 alter table public.cells add column thumbnail_path text;
+
+-- v2.5: landing overlay — surfaces artists with an active streak as
+-- inspiration ("sketches from consistent artists"). Same reasoning as
+-- get_public_profile: no public SELECT policy on profiles (would also
+-- expose email/can_login/can_upload), so this is a security-definer
+-- function returning only safe, already-public-elsewhere fields
+-- (display_name/avatar_path mirror get_public_profile and ProfileAvatar;
+-- current_streak is what's being ranked on).
+create or replace function public.get_consistent_artists(p_limit integer default 6)
+returns table (
+  id uuid,
+  display_name text,
+  avatar_path text,
+  current_streak integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id, display_name, avatar_path, current_streak
+  from public.profiles
+  where current_streak > 0
+  order by current_streak desc, id
+  limit p_limit;
+$$;
+
+grant execute on function public.get_consistent_artists(integer) to anon, authenticated;

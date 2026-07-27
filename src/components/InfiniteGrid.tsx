@@ -10,6 +10,7 @@ import AboutModal from "./AboutModal";
 import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
 import FilterBar from "./FilterBar";
 import MineToggleButton from "./MineToggleButton";
+import LandingOverlay from "./LandingOverlay";
 import MobileToolsDrawer from "./MobileToolsDrawer";
 import { useCellChunks } from "@/hooks/useCellChunks";
 import { useUser } from "@/hooks/useUser";
@@ -53,6 +54,10 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [isDragging, setIsDragging] = useState(false);
   const [pendingCell, setPendingCell] = useState<{ x: number; y: number } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  // Shown once when the gallery is first opened — dismissed for the rest of
+  // this session, not persisted, since this component only ever mounts once
+  // per page load anyway.
+  const [overlayOpen, setOverlayOpen] = useState(true);
   // Mobile-only bottom sheet holding the filter/mine/size-toggle controls,
   // out of the main joystick/recenter row.
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -438,6 +443,22 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     });
   }, [animateTranslateTo, isTouchPrimary, cellSize]);
 
+  // Landing overlay's "shuffle" action — teleports to a random existing
+  // sketch, reusing the same off-screen-controls-aware centering math as
+  // handleRecenter/the deep-link effect. dotCoords is already fetched on
+  // mount for the minimap, so this needs no extra query.
+  const handleShuffle = useCallback(() => {
+    if (dotCoords.length === 0 || !containerRef.current) return;
+    const target = dotCoords[Math.floor(Math.random() * dotCoords.length)];
+    const usableHeight = isTouchPrimary
+      ? containerRef.current.clientHeight - MOBILE_CONTROLS_HEIGHT
+      : containerRef.current.clientHeight;
+    animateTranslateTo({
+      x: containerRef.current.clientWidth / 2 - target.x * cellStep - cellSize / 2,
+      y: usableHeight / 2 - target.y * cellStep - cellSize / 2,
+    });
+  }, [dotCoords, isTouchPrimary, cellStep, cellSize, animateTranslateTo]);
+
   // Changes the discrete zoom step, keeping whichever world point sits
   // under `anchor` (container-relative px — the zoom button click passes
   // the container's own center) visually stable rather than re-centering
@@ -767,6 +788,25 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       )}
 
       {isTouchPrimary && <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />}
+
+      <LandingOverlay
+        open={overlayOpen}
+        onClose={() => setOverlayOpen(false)}
+        user={user}
+        themes={themes}
+        onShowMine={() => {
+          setOnlyMine(true);
+          setOverlayOpen(false);
+        }}
+        onExploreTheme={(themeId) => {
+          setThemeFilterId(themeId);
+          setOverlayOpen(false);
+        }}
+        onShuffle={() => {
+          handleShuffle();
+          setOverlayOpen(false);
+        }}
+      />
 
       {pendingCell && (() => {
         const existing = getActiveCell(pendingCell.x, pendingCell.y);

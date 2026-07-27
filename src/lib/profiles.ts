@@ -138,6 +138,24 @@ export async function fetchPublicProfile(userId: string): Promise<PublicProfile 
   return (data as PublicProfile) ?? null;
 }
 
+export interface ConsistentArtist {
+  id: string;
+  display_name: string | null;
+  avatar_path: string | null;
+  current_streak: number;
+}
+
+// Backs the landing overlay's "sketches from consistent artists" section —
+// ranked by current_streak rather than any follow/social-graph concept
+// (this app doesn't have one), via the same security-definer pattern as
+// fetchPublicProfile since profiles has no public SELECT policy.
+export async function fetchConsistentArtists(limit = 6): Promise<ConsistentArtist[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("get_consistent_artists", { p_limit: limit });
+  if (error) throw error;
+  return (data ?? []) as ConsistentArtist[];
+}
+
 export async function fetchAdminEmails(): Promise<Set<string>> {
   const supabase = createClient();
   const { data, error } = await supabase.from("admins").select("email");
