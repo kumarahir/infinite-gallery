@@ -20,18 +20,24 @@ export interface ParsedThemePrompt {
   stretch_instruction: string | null;
 }
 
-const DAY_LINE = /^day\s+(\d+)\s*-\s*(.+)$/i;
-const SIMPLE_LINE = /^simple\s*-\s*(.+)$/i;
-const MEDIUM_LINE = /^medium\s*-\s*(.+)$/i;
-const STRETCH_LINE = /^stretch\s*-\s*(.+)$/i;
+// Separator between the label and its text — accepts a plain hyphen as
+// well as en dash/em dash, since pasting from Word/Docs/Notes commonly
+// autocorrects "word - word" into an en dash.
+const SEP = "\\s*[-\u2013\u2014:]\\s*";
+const DAY_LINE = new RegExp(`^day\\s+(\\d+)${SEP}(.+)$`, "i");
+const QUOTE_LINE = new RegExp(`^quote${SEP}(.+)$`, "i");
+const SIMPLE_LINE = new RegExp(`^simple${SEP}(.+)$`, "i");
+const MEDIUM_LINE = new RegExp(`^medium${SEP}(.+)$`, "i");
+const STRETCH_LINE = new RegExp(`^stretch${SEP}(.+)$`, "i");
 
 // Parses the admin's pasted monthly-prompt doc into per-day rows — matches
-// the fixed "Day X - <prompt>" / quote / Simple-Medium-Stretch format the
-// community already writes prompts in elsewhere, so a whole month can be
-// authored outside this app and pasted in here in one go. Blank lines and
-// any text before the first "Day N -" line are ignored; the first
-// unrecognized line within a day's block is taken as its quote (only the
-// first — the format has exactly one).
+// the "Day X - <prompt>" / quote / Simple-Medium-Stretch format the
+// community writes prompts in, so a whole month can be authored outside
+// this app and pasted in here in one go. Blank lines and any text before
+// the first "Day N" line are ignored. The quote line may carry an explicit
+// "Quote -" label or, for compatibility, be a bare unlabeled line — the
+// first unrecognized line within a day's block is taken as its quote if no
+// "Quote -" line is present.
 export function parseThemePromptsText(raw: string): ParsedThemePrompt[] {
   const lines = raw.split("\n").map((l) => l.trim());
   const prompts: ParsedThemePrompt[] = [];
@@ -55,6 +61,11 @@ export function parseThemePromptsText(raw: string): ParsedThemePrompt[] {
     }
     if (!current) continue;
 
+    const quoteMatch = line.match(QUOTE_LINE);
+    if (quoteMatch) {
+      current.quote = quoteMatch[1].trim();
+      continue;
+    }
     const simpleMatch = line.match(SIMPLE_LINE);
     if (simpleMatch) {
       current.simple_instruction = simpleMatch[1].trim();
