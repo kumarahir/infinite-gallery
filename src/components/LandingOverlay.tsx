@@ -12,6 +12,7 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { fetchConsistentArtists, fetchMyProfile, type ConsistentArtist } from "@/lib/profiles";
+import { fetchPromptForDay, type ThemePrompt } from "@/lib/themePrompts";
 
 function Thumb({ cell, size }: { cell: CellRow; size: number }) {
   const path = cell.thumbnail_path ?? cell.image_path;
@@ -56,8 +57,12 @@ export default function LandingOverlay({
   const [themeCount, setThemeCount] = useState<number | null>(null);
   const [artists, setArtists] = useState<ConsistentArtist[]>([]);
   const [artistCells, setArtistCells] = useState<Map<string, CellRow>>(new Map());
+  const [todaysPrompt, setTodaysPrompt] = useState<ThemePrompt | null>(null);
 
   const defaultTheme = themes.find((t) => t.is_default) ?? null;
+  // Same UTC-day convention used for upload streaks elsewhere in the app —
+  // theme_prompts has no explicit date column, just a day-of-month.
+  const dayOfMonth = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getUTCDate();
 
   useEffect(() => {
     if (!open || !user) return;
@@ -98,6 +103,13 @@ export default function LandingOverlay({
       .then(setThemeCount)
       .catch(() => setThemeCount(null));
   }, [open, defaultTheme]);
+
+  useEffect(() => {
+    if (!open || !defaultTheme) return;
+    fetchPromptForDay(defaultTheme.id, dayOfMonth)
+      .then(setTodaysPrompt)
+      .catch(() => setTodaysPrompt(null));
+  }, [open, defaultTheme, dayOfMonth]);
 
   useEffect(() => {
     if (!open) return;
@@ -149,6 +161,40 @@ export default function LandingOverlay({
                 {streak.current} day streak
               </p>
               <p className="text-xs text-amber-700/80 dark:text-amber-300/80">{streak.nudge}</p>
+            </div>
+          </div>
+        )}
+
+        {todaysPrompt && (
+          <div className="rounded-lg border border-black/10 dark:border-white/15 px-4 py-3">
+            <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40 mb-1">
+              Day {todaysPrompt.day_of_month}&rsquo;s prompt
+            </p>
+            <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
+            {todaysPrompt.quote && (
+              <p className="text-xs italic text-black/60 dark:text-white/60 mt-1">
+                &ldquo;{todaysPrompt.quote}&rdquo;
+              </p>
+            )}
+            <div className="flex flex-col gap-0.5 mt-2 text-xs">
+              {todaysPrompt.simple_instruction && (
+                <p>
+                  <span className="font-medium text-green-700 dark:text-green-400">Simple —</span>{" "}
+                  {todaysPrompt.simple_instruction}
+                </p>
+              )}
+              {todaysPrompt.medium_instruction && (
+                <p>
+                  <span className="font-medium text-amber-700 dark:text-amber-400">Medium —</span>{" "}
+                  {todaysPrompt.medium_instruction}
+                </p>
+              )}
+              {todaysPrompt.stretch_instruction && (
+                <p>
+                  <span className="font-medium text-red-700 dark:text-red-400">Stretch —</span>{" "}
+                  {todaysPrompt.stretch_instruction}
+                </p>
+              )}
             </div>
           </div>
         )}

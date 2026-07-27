@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import AdminThemesPanel from "@/components/AdminThemesPanel";
 import AdminUsersPanel from "@/components/AdminUsersPanel";
 import AdminBulkUploadPanel from "@/components/AdminBulkUploadPanel";
+import AdminPromptsPanel from "@/components/AdminPromptsPanel";
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -28,6 +29,11 @@ export default async function AdminPage() {
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Themes</h2>
         <AdminThemesPanel />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Daily prompts</h2>
+        <AdminPromptsPanel />
       </div>
 
       <div className="flex flex-col gap-3">

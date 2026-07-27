@@ -631,3 +631,46 @@ as $$
 $$;
 
 grant execute on function public.get_consistent_artists(integer) to anon, authenticated;
+
+-- v2.6: daily prompts within a monthly theme. day_of_month (not an explicit
+-- date) keeps this simple — "today's prompt" is just the default theme's
+-- row where day_of_month = extract(day from today), the same UTC-day
+-- convention already used for upload streaks (see bump_upload_streak
+-- above). Admins author a whole month at once by pasting a block of
+-- "Day X - <prompt>" text (parsed client-side in themePrompts.ts) which
+-- upserts here, so this table doesn't care how the text was produced —
+-- manually today, AI-assisted later.
+create table public.theme_prompts (
+  id                   bigint generated always as identity primary key,
+  theme_id             bigint not null references public.themes(id) on delete cascade,
+  day_of_month         integer not null check (day_of_month between 1 and 31),
+  prompt_text          text not null,
+  quote                text,
+  simple_instruction   text,
+  medium_instruction   text,
+  stretch_instruction  text,
+  created_at           timestamptz not null default now(),
+  unique (theme_id, day_of_month)
+);
+
+alter table public.theme_prompts enable row level security;
+
+create policy "theme_prompts_select_public"
+  on public.theme_prompts for select
+  using (true);
+
+create policy "theme_prompts_admin_insert"
+  on public.theme_prompts for insert
+  to authenticated
+  with check (public.is_admin());
+
+create policy "theme_prompts_admin_update"
+  on public.theme_prompts for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+create policy "theme_prompts_admin_delete"
+  on public.theme_prompts for delete
+  to authenticated
+  using (public.is_admin());
