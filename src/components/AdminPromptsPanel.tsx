@@ -53,6 +53,10 @@ function draftFromPrompt(p: ThemePrompt): PromptFormDraft {
 
 const toNullable = (s: string) => (s.trim() ? s.trim() : null);
 
+const FIELD_LABEL = "text-xs font-medium text-black/50 dark:text-white/50";
+const FIELD_INPUT =
+  "w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40";
+
 export default function AdminPromptsPanel() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
@@ -65,9 +69,12 @@ export default function AdminPromptsPanel() {
   const [message, setMessage] = useState<string | null>(null);
 
   // Add/edit form — shared between "Add prompt" (blank draft, day_of_month
-  // editable) and a saved row's "Edit" (pre-filled, day_of_month fixed so a
-  // typo'd day can't silently create a duplicate day and orphan the
-  // original — see updateThemePrompt in themePrompts.ts).
+  // editable, rendered above the list since there's no row to anchor to)
+  // and a saved row's "Edit" (pre-filled, rendered inline in that row so
+  // editing doesn't jerk the admin's scroll position back up to the top of
+  // a 31-day list). day_of_month is fixed in edit mode so a typo'd day
+  // can't silently create a duplicate day and orphan the original row —
+  // see updateThemePrompt in themePrompts.ts.
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingPrompt, setEditingPrompt] = useState<ThemePrompt | null>(null);
   const [draft, setDraft] = useState<PromptFormDraft>(BLANK_DRAFT);
@@ -191,6 +198,90 @@ export default function AdminPromptsPanel() {
     }
   };
 
+  // Shared field inputs for both the "add" form (above the list) and an
+  // "edit" form (inline inside the row being edited) — only the day-of-month
+  // field differs between the two, so callers pass whether to show it.
+  const renderFormFields = (showDayField: boolean) => (
+    <>
+      {showDayField && (
+        <label className="flex flex-col gap-1">
+          <span className={FIELD_LABEL}>Day of month (1-31)</span>
+          <input
+            type="number"
+            min={1}
+            max={31}
+            value={draft.day_of_month}
+            onChange={(e) => setDraft((d) => ({ ...d, day_of_month: e.target.value }))}
+            className={FIELD_INPUT}
+          />
+        </label>
+      )}
+      <label className="flex flex-col gap-1">
+        <span className={FIELD_LABEL}>Prompt</span>
+        <input
+          type="text"
+          value={draft.prompt_text}
+          onChange={(e) => setDraft((d) => ({ ...d, prompt_text: e.target.value }))}
+          className={FIELD_INPUT}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={FIELD_LABEL}>Quote</span>
+        <textarea
+          value={draft.quote}
+          onChange={(e) => setDraft((d) => ({ ...d, quote: e.target.value }))}
+          rows={2}
+          className={FIELD_INPUT}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={FIELD_LABEL}>Simple</span>
+        <textarea
+          value={draft.simple_instruction}
+          onChange={(e) => setDraft((d) => ({ ...d, simple_instruction: e.target.value }))}
+          rows={2}
+          className={FIELD_INPUT}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={FIELD_LABEL}>Medium</span>
+        <textarea
+          value={draft.medium_instruction}
+          onChange={(e) => setDraft((d) => ({ ...d, medium_instruction: e.target.value }))}
+          rows={2}
+          className={FIELD_INPUT}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={FIELD_LABEL}>Stretch</span>
+        <textarea
+          value={draft.stretch_instruction}
+          onChange={(e) => setDraft((d) => ({ ...d, stretch_instruction: e.target.value }))}
+          rows={2}
+          className={FIELD_INPUT}
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleFormSave}
+          disabled={busy}
+          className="rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-4 py-2 disabled:opacity-40"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={closeForm}
+          disabled={busy}
+          className="rounded-lg border border-black/10 dark:border-white/15 text-sm font-medium px-4 py-2 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+
   if (loading) {
     return <p className="text-sm text-black/50 dark:text-white/50">Loading…</p>;
   }
@@ -207,7 +298,7 @@ export default function AdminPromptsPanel() {
             setMessage(null);
             closeForm();
           }}
-          className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+          className={FIELD_INPUT}
         >
           {themes.map((theme) => (
             <option key={theme.id} value={theme.id}>
@@ -224,7 +315,7 @@ export default function AdminPromptsPanel() {
           onChange={(e) => setPasteText(e.target.value)}
           placeholder={PASTE_PLACEHOLDER}
           rows={8}
-          className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm font-mono outline-none focus:border-black/30 dark:focus:border-white/40"
+          className={`${FIELD_INPUT} font-mono`}
         />
       </label>
 
@@ -282,89 +373,10 @@ export default function AdminPromptsPanel() {
           )}
         </div>
 
-        {formMode && (
+        {formMode === "add" && (
           <div className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3">
-            <p className="text-sm font-medium">
-              {formMode === "add" ? "Add a day" : `Edit Day ${editingPrompt?.day_of_month}`}
-            </p>
-            {formMode === "add" && (
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-black/50 dark:text-white/50">
-                  Day of month (1-31)
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={draft.day_of_month}
-                  onChange={(e) => setDraft((d) => ({ ...d, day_of_month: e.target.value }))}
-                  className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-                />
-              </label>
-            )}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-black/50 dark:text-white/50">Prompt</span>
-              <input
-                type="text"
-                value={draft.prompt_text}
-                onChange={(e) => setDraft((d) => ({ ...d, prompt_text: e.target.value }))}
-                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-black/50 dark:text-white/50">Quote</span>
-              <textarea
-                value={draft.quote}
-                onChange={(e) => setDraft((d) => ({ ...d, quote: e.target.value }))}
-                rows={2}
-                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-black/50 dark:text-white/50">Simple</span>
-              <textarea
-                value={draft.simple_instruction}
-                onChange={(e) => setDraft((d) => ({ ...d, simple_instruction: e.target.value }))}
-                rows={2}
-                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-black/50 dark:text-white/50">Medium</span>
-              <textarea
-                value={draft.medium_instruction}
-                onChange={(e) => setDraft((d) => ({ ...d, medium_instruction: e.target.value }))}
-                rows={2}
-                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-black/50 dark:text-white/50">Stretch</span>
-              <textarea
-                value={draft.stretch_instruction}
-                onChange={(e) => setDraft((d) => ({ ...d, stretch_instruction: e.target.value }))}
-                rows={2}
-                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-              />
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleFormSave}
-                disabled={busy}
-                className="rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-4 py-2 disabled:opacity-40"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={closeForm}
-                disabled={busy}
-                className="rounded-lg border border-black/10 dark:border-white/15 text-sm font-medium px-4 py-2 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-            </div>
+            <p className="text-sm font-medium">Add a day</p>
+            {renderFormFields(true)}
           </div>
         )}
 
@@ -372,34 +384,44 @@ export default function AdminPromptsPanel() {
           <p className="text-sm text-black/50 dark:text-white/50">No prompts saved yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {savedPrompts.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
-              >
-                <span className="text-sm">
-                  Day {p.day_of_month} — {p.prompt_text}
-                </span>
-                <div className="flex items-center gap-3 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => openEditForm(p)}
-                    disabled={busy}
-                    className="text-xs font-medium text-black/50 dark:text-white/50 hover:opacity-70 disabled:opacity-40"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(p)}
-                    disabled={busy}
-                    className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
+            {savedPrompts.map((p) =>
+              formMode === "edit" && editingPrompt?.id === p.id ? (
+                <li
+                  key={p.id}
+                  className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3"
+                >
+                  <p className="text-sm font-medium">Edit Day {p.day_of_month}</p>
+                  {renderFormFields(false)}
+                </li>
+              ) : (
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2"
+                >
+                  <span className="text-sm">
+                    Day {p.day_of_month} — {p.prompt_text}
+                  </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditForm(p)}
+                      disabled={busy}
+                      className="text-xs font-medium text-black/50 dark:text-white/50 hover:opacity-70 disabled:opacity-40"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p)}
+                      disabled={busy}
+                      className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              )
+            )}
           </ul>
         )}
       </div>
