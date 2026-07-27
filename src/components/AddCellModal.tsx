@@ -17,6 +17,7 @@ import {
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImageWithThumbnail } from "@/lib/resizeImage";
 import { colorCorrectImage, cropImage, detectPaperCorners, type Corners } from "@/lib/scanDocument";
+import { fetchPromptForDay, type ThemePrompt } from "@/lib/themePrompts";
 import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
 
@@ -109,6 +110,7 @@ export default function AddCellModal({
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
+  const [todaysPrompt, setTodaysPrompt] = useState<ThemePrompt | null>(null);
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -140,6 +142,17 @@ export default function AddCellModal({
         setThemes(list);
         const defaultTheme = list.find((t) => t.is_default);
         setThemeId(defaultTheme?.id ?? list[0]?.id ?? null);
+        if (!defaultTheme) return;
+        // Tied to the default theme specifically, not whatever the user
+        // ends up picking in the theme dropdown below — switching that
+        // dropdown to browse other themes shouldn't change which prompt
+        // is shown as "today's".
+        const dayOfMonth = new Date(
+          new Date().toISOString().slice(0, 10) + "T00:00:00Z"
+        ).getUTCDate();
+        fetchPromptForDay(defaultTheme.id, dayOfMonth)
+          .then(setTodaysPrompt)
+          .catch(() => setTodaysPrompt(null));
       })
       .catch(() => {
         // Leave themes empty — the submit button stays disabled in that case.
@@ -384,6 +397,46 @@ export default function AddCellModal({
                 Write Text
               </button>
             </div>
+
+            {tab === "image" && todaysPrompt && (
+              <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
+                <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
+                  Day {todaysPrompt.day_of_month}&rsquo;s prompt
+                </p>
+                <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
+                {todaysPrompt.quote && (
+                  <p className="text-xs italic text-black/60 dark:text-white/60">
+                    &ldquo;{todaysPrompt.quote}&rdquo;
+                  </p>
+                )}
+                <div className="flex flex-col gap-0.5 text-xs">
+                  {todaysPrompt.simple_instruction && (
+                    <p>
+                      <span className="font-medium text-green-700 dark:text-green-400">
+                        Simple —
+                      </span>{" "}
+                      {todaysPrompt.simple_instruction}
+                    </p>
+                  )}
+                  {todaysPrompt.medium_instruction && (
+                    <p>
+                      <span className="font-medium text-amber-700 dark:text-amber-400">
+                        Medium —
+                      </span>{" "}
+                      {todaysPrompt.medium_instruction}
+                    </p>
+                  )}
+                  {todaysPrompt.stretch_instruction && (
+                    <p>
+                      <span className="font-medium text-red-700 dark:text-red-400">
+                        Stretch —
+                      </span>{" "}
+                      {todaysPrompt.stretch_instruction}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {tab === "image" ? (
               limitReached ? (

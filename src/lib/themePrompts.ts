@@ -116,6 +116,36 @@ export async function upsertThemePrompts(
   if (error) throw error;
 }
 
+// Adds (or, if the day already exists for this theme, overwrites) a single
+// day's prompt — the admin panel's "Add prompt" form. Goes through the same
+// upsert-by-(theme_id, day_of_month) path as the bulk paste import.
+export async function addThemePrompt(
+  themeId: number,
+  prompt: ParsedThemePrompt
+): Promise<void> {
+  return upsertThemePrompts(themeId, [prompt]);
+}
+
+// Edits an existing day's prompt fields by row id — deliberately not an
+// upsert-by-day like addThemePrompt, since the admin panel's edit form
+// never changes day_of_month; going through `id` means a typo'd day number
+// can't be "corrected" into silently creating a duplicate day while
+// orphaning the original row.
+export async function updateThemePrompt(
+  id: number,
+  fields: Omit<ParsedThemePrompt, "day_of_month">
+): Promise<ThemePrompt> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("theme_prompts")
+    .update(fields)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ThemePrompt;
+}
+
 export async function deleteThemePrompt(id: number): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase.from("theme_prompts").delete().eq("id", id);

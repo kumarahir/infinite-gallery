@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { fetchThemes, type Theme } from "@/lib/cells";
 import {
+  addThemePrompt,
   deleteThemePrompt,
   fetchThemePrompts,
   parseThemePromptsText,
+  updateThemePrompt,
   upsertThemePrompts,
   type ParsedThemePrompt,
   type ThemePrompt,
@@ -20,6 +22,37 @@ Stretch - Draw a full scene of someone starting a hike at dawn.
 Day 2 - Growth
 ...`;
 
+interface PromptFormDraft {
+  day_of_month: string;
+  prompt_text: string;
+  quote: string;
+  simple_instruction: string;
+  medium_instruction: string;
+  stretch_instruction: string;
+}
+
+const BLANK_DRAFT: PromptFormDraft = {
+  day_of_month: "",
+  prompt_text: "",
+  quote: "",
+  simple_instruction: "",
+  medium_instruction: "",
+  stretch_instruction: "",
+};
+
+function draftFromPrompt(p: ThemePrompt): PromptFormDraft {
+  return {
+    day_of_month: String(p.day_of_month),
+    prompt_text: p.prompt_text,
+    quote: p.quote ?? "",
+    simple_instruction: p.simple_instruction ?? "",
+    medium_instruction: p.medium_instruction ?? "",
+    stretch_instruction: p.stretch_instruction ?? "",
+  };
+}
+
+const toNullable = (s: string) => (s.trim() ? s.trim() : null);
+
 export default function AdminPromptsPanel() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
@@ -30,6 +63,14 @@ export default function AdminPromptsPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Add/edit form — shared between "Add prompt" (blank draft, day_of_month
+  // editable) and a saved row's "Edit" (pre-filled, day_of_month fixed so a
+  // typo'd day can't silently create a duplicate day and orphan the
+  // original — see updateThemePrompt in themePrompts.ts).
+  const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
+  const [editingPrompt, setEditingPrompt] = useState<ThemePrompt | null>(null);
+  const [draft, setDraft] = useState<PromptFormDraft>(BLANK_DRAFT);
 
   useEffect(() => {
     fetchThemes()
@@ -47,6 +88,28 @@ export default function AdminPromptsPanel() {
       .then(setSavedPrompts)
       .catch(() => setError("Failed to load saved prompts."));
   }, [themeId]);
+
+  const closeForm = () => {
+    setFormMode(null);
+    setEditingPrompt(null);
+    setDraft(BLANK_DRAFT);
+  };
+
+  const openAddForm = () => {
+    setError(null);
+    setMessage(null);
+    setFormMode("add");
+    setEditingPrompt(null);
+    setDraft(BLANK_DRAFT);
+  };
+
+  const openEditForm = (prompt: ThemePrompt) => {
+    setError(null);
+    setMessage(null);
+    setFormMode("edit");
+    setEditingPrompt(prompt);
+    setDraft(draftFromPrompt(prompt));
+  };
 
   const handleParse = () => {
     setError(null);
@@ -91,6 +154,43 @@ export default function AdminPromptsPanel() {
     }
   };
 
+  const handleFormSave = async () => {
+    if (themeId == null) return;
+    const dayNum = Number(draft.day_of_month);
+    if (!draft.prompt_text.trim()) {
+      setError("Prompt text is required.");
+      return;
+    }
+    if (formMode === "add" && (!Number.isInteger(dayNum) || dayNum < 1 || dayNum > 31)) {
+      setError("Day must be a number between 1 and 31.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const fields = {
+        prompt_text: draft.prompt_text.trim(),
+        quote: toNullable(draft.quote),
+        simple_instruction: toNullable(draft.simple_instruction),
+        medium_instruction: toNullable(draft.medium_instruction),
+        stretch_instruction: toNullable(draft.stretch_instruction),
+      };
+      if (formMode === "add") {
+        await addThemePrompt(themeId, { day_of_month: dayNum, ...fields });
+      } else if (formMode === "edit" && editingPrompt) {
+        await updateThemePrompt(editingPrompt.id, fields);
+      }
+      const refreshed = await fetchThemePrompts(themeId);
+      setSavedPrompts(refreshed);
+      setMessage(formMode === "add" ? "Prompt added." : "Prompt updated.");
+      closeForm();
+    } catch {
+      setError(formMode === "add" ? "Failed to add prompt." : "Failed to update prompt.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return <p className="text-sm text-black/50 dark:text-white/50">Loading…</p>;
   }
@@ -105,6 +205,7 @@ export default function AdminPromptsPanel() {
             setThemeId(Number(e.target.value));
             setPreview(null);
             setMessage(null);
+            closeForm();
           }}
           className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
         >
@@ -167,7 +268,106 @@ export default function AdminPromptsPanel() {
       )}
 
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium">Saved prompts for this theme</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">Saved prompts for this theme</p>
+          {formMode !== "add" && (
+            <button
+              type="button"
+              onClick={openAddForm}
+              disabled={themeId == null}
+              className="text-xs font-medium text-green-700 dark:text-green-400 hover:opacity-70 disabled:opacity-40"
+            >
+              + Add prompt
+            </button>
+          )}
+        </div>
+
+        {formMode && (
+          <div className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3">
+            <p className="text-sm font-medium">
+              {formMode === "add" ? "Add a day" : `Edit Day ${editingPrompt?.day_of_month}`}
+            </p>
+            {formMode === "add" && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                  Day of month (1-31)
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={draft.day_of_month}
+                  onChange={(e) => setDraft((d) => ({ ...d, day_of_month: e.target.value }))}
+                  className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                />
+              </label>
+            )}
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-black/50 dark:text-white/50">Prompt</span>
+              <input
+                type="text"
+                value={draft.prompt_text}
+                onChange={(e) => setDraft((d) => ({ ...d, prompt_text: e.target.value }))}
+                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-black/50 dark:text-white/50">Quote</span>
+              <textarea
+                value={draft.quote}
+                onChange={(e) => setDraft((d) => ({ ...d, quote: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-black/50 dark:text-white/50">Simple</span>
+              <textarea
+                value={draft.simple_instruction}
+                onChange={(e) => setDraft((d) => ({ ...d, simple_instruction: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-black/50 dark:text-white/50">Medium</span>
+              <textarea
+                value={draft.medium_instruction}
+                onChange={(e) => setDraft((d) => ({ ...d, medium_instruction: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-black/50 dark:text-white/50">Stretch</span>
+              <textarea
+                value={draft.stretch_instruction}
+                onChange={(e) => setDraft((d) => ({ ...d, stretch_instruction: e.target.value }))}
+                rows={2}
+                className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+              />
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleFormSave}
+                disabled={busy}
+                className="rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-4 py-2 disabled:opacity-40"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={busy}
+                className="rounded-lg border border-black/10 dark:border-white/15 text-sm font-medium px-4 py-2 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {savedPrompts.length === 0 ? (
           <p className="text-sm text-black/50 dark:text-white/50">No prompts saved yet.</p>
         ) : (
@@ -180,14 +380,24 @@ export default function AdminPromptsPanel() {
                 <span className="text-sm">
                   Day {p.day_of_month} — {p.prompt_text}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(p)}
-                  disabled={busy}
-                  className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
-                >
-                  Delete
-                </button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditForm(p)}
+                    disabled={busy}
+                    className="text-xs font-medium text-black/50 dark:text-white/50 hover:opacity-70 disabled:opacity-40"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(p)}
+                    disabled={busy}
+                    className="text-xs font-medium text-red-600 dark:text-red-400 hover:opacity-70 disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
