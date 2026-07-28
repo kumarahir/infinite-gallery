@@ -1,10 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getPublicImageUrl, type CellRow } from "@/lib/cells";
+import { fetchPromptForDay } from "@/lib/themePrompts";
 
 function buildShareUrl(x: number, y: number): string {
   return `${window.location.origin}/?cell=${x},${y}`;
+}
+
+// "Check out this sketch on <prompt> on <theme> by <artist first name>" —
+// each clause is only included if that piece of data actually exists (an
+// older cell might predate theme_prompts, have no theme, or have no
+// created_by_name), so this degrades gracefully instead of ever showing a
+// broken-looking "on on by" sentence.
+function buildShareText(cell: CellRow, promptText: string | null): string {
+  if (cell.cell_type === "text") return cell.text_content ?? "";
+
+  const parts: string[] = ["Check out this sketch"];
+  if (promptText) parts.push(`on ${promptText}`);
+  if (cell.themes?.name) parts.push(`on ${cell.themes.name}`);
+  const firstName = cell.created_by_name?.trim().split(/\s+/)[0];
+  if (firstName) parts.push(`by ${firstName}`);
+  return parts.length > 1 ? parts.join(" ") : "Check out this sketch on Infinite Gallery";
 }
 
 async function tryAttachImageFile(
@@ -26,9 +43,22 @@ async function tryAttachImageFile(
 
 export default function ShareButton({ cell }: { cell: CellRow }) {
   const [copied, setCopied] = useState(false);
+  const [promptText, setPromptText] = useState<string | null>(null);
   const url = buildShareUrl(cell.x, cell.y);
-  const text = cell.cell_type === "text" ? cell.text_content ?? "" : "Check this out on Infinite Gallery";
   const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
+
+  useEffect(() => {
+    if (cell.cell_type !== "image" || cell.theme_id == null) return;
+    // Whichever day was live when this was uploaded, not "today" — a share
+    // of an old sketch should still credit the prompt it was actually made
+    // for.
+    const dayOfMonth = new Date(cell.created_at).getUTCDate();
+    fetchPromptForDay(cell.theme_id, dayOfMonth)
+      .then((p) => setPromptText(p?.prompt_text ?? null))
+      .catch(() => setPromptText(null));
+  }, [cell.cell_type, cell.theme_id, cell.created_at]);
+
+  const text = buildShareText(cell, promptText);
 
   const share = async () => {
     let shareData: ShareData = { title: "Infinite Gallery", text, url };
