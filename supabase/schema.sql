@@ -710,3 +710,69 @@ create policy "cell_reactions_own_delete"
   on public.cell_reactions for delete
   to authenticated
   using (auth.uid() = user_id);
+
+-- v2.8: weekly review email. Sent Saturday evening (see vercel.json cron)
+-- only to artists who uploaded 3+ sketches in the trailing 7 days — anyone
+-- with 1-2 uploads keeps getting the existing streak-reminders email
+-- instead, so this and get_streak_reminder_candidates deliberately target
+-- non-overlapping segments rather than one adaptive template. Same
+-- shared-secret cron trust model as the streak-reminders functions above.
+alter table public.profiles add column weekly_review_sent_at timestamptz;
+
+create or replace function public.get_weekly_review_candidates(p_secret text)
+returns table (
+  id uuid,
+  email text,
+  display_name text,
+  current_streak integer
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_secret is null or not exists (
+    select 1 from public.app_secrets where key = 'cron_secret' and value = p_secret
+  ) then
+    raise exception 'not authorized';
+  end if;
+
+  return query
+  select p.id, p.email, p.display_name, p.current_streak
+  from public.profiles p
+  where (
+    select count(*) from public.cells c
+    where c.created_by = p.id
+      and c.cell_type = 'image'
+      and c.created_at >= now() - interval '7 days'
+  ) >= 3
+  and (
+    p.weekly_review_sent_at is null
+    or p.weekly_review_sent_at < now() - interval '6 days'
+  );
+end;
+$$;
+
+grant execute on function public.get_weekly_review_candidates(text) to anon, authenticated;
+
+create or replace function public.mark_weekly_review_sent(p_secret text, p_user_ids uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_secret is null or not exists (
+    select 1 from public.app_secrets where key = 'cron_secret' and value = p_secret
+  ) then
+    raise exception 'not authorized';
+  end if;
+
+  update public.profiles
+  set weekly_review_sent_at = now()
+  where id = any(p_user_ids);
+end;
+$$;
+
+grant execute on function public.mark_weekly_review_sent(text, uuid[]) to anon, authenticated;
