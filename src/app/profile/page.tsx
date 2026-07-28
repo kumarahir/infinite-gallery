@@ -46,10 +46,14 @@ export default async function ProfilePage() {
   const longestStreak = typedProfile?.longest_streak ?? 0;
 
   // Aligned to start on a Sunday so the calendar renders as complete
-  // 7-day week columns, GitHub-heatmap style.
+  // 7-day week columns, GitHub-heatmap style, and ends with the Saturday of
+  // the CURRENT week so today is always visible. Must align using today's
+  // own day-of-week — aligning using the day-of-week of the (already
+  // offset) startDate instead only reached today when today happened to be
+  // a Saturday, cutting off up to 6 of the most recent days otherwise.
   const startDate = new Date(today);
-  startDate.setUTCDate(startDate.getUTCDate() - (CALENDAR_WEEKS * 7 - 1));
-  startDate.setUTCDate(startDate.getUTCDate() - startDate.getUTCDay());
+  startDate.setUTCDate(startDate.getUTCDate() - today.getUTCDay());
+  startDate.setUTCDate(startDate.getUTCDate() - (CALENDAR_WEEKS - 1) * 7);
 
   const { data: contributionRows } = await supabase
     .from("cells")
