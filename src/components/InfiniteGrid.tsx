@@ -818,6 +818,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           return existing ? (
             <ViewCellModal
               cell={existing}
+              user={user}
               isAdmin={isAdmin}
               onClose={closeModal}
               onDeleted={handleCellDeleted}
@@ -827,6 +828,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         return existing ? (
           <ViewCellModal
             cell={existing}
+            user={user}
             isAdmin={isAdmin}
             celebrateTotal={
               celebration && celebration.x === pendingCell.x && celebration.y === pendingCell.y

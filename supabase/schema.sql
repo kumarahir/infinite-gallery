@@ -674,3 +674,39 @@ create policy "theme_prompts_admin_delete"
   on public.theme_prompts for delete
   to authenticated
   using (public.is_admin());
+
+-- v2.7: one positive/uplifting reaction per viewer per sketch, changeable.
+-- Emotion set is fixed and validated server-side (not just in the UI) via
+-- the check constraint — see EMOTIONS in src/lib/reactions.ts for the
+-- matching labels/emojis. Counts are public (anyone viewing a sketch sees
+-- them); only the reacting user can write their own row.
+create table public.cell_reactions (
+  id          bigint generated always as identity primary key,
+  cell_id     bigint not null references public.cells(id) on delete cascade,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  emotion     text not null check (emotion in ('inspired', 'proud', 'joyful', 'confident', 'loved')),
+  created_at  timestamptz not null default now(),
+  unique (cell_id, user_id)
+);
+
+alter table public.cell_reactions enable row level security;
+
+create policy "cell_reactions_select_public"
+  on public.cell_reactions for select
+  using (true);
+
+create policy "cell_reactions_own_insert"
+  on public.cell_reactions for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "cell_reactions_own_update"
+  on public.cell_reactions for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "cell_reactions_own_delete"
+  on public.cell_reactions for delete
+  to authenticated
+  using (auth.uid() = user_id);

@@ -2,8 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import type { User } from "@supabase/supabase-js";
 import { deleteCell, getPublicImageUrl, type CellRow } from "@/lib/cells";
 import { fetchPublicProfile, type PublicProfile } from "@/lib/profiles";
+import {
+  clearMyReaction,
+  fetchMyReaction,
+  fetchReactionCounts,
+  setMyReaction,
+  EMOTIONS,
+  type Emotion,
+  type ReactionCounts,
+} from "@/lib/reactions";
 import ShareButton from "./ShareButton";
 
 function SocialLinks({ profile }: { profile: PublicProfile }) {
@@ -84,6 +94,7 @@ function SocialLinks({ profile }: { profile: PublicProfile }) {
 
 export default function ViewCellModal({
   cell,
+  user,
   isAdmin,
   celebrateTotal,
   celebrateStreak,
@@ -91,6 +102,7 @@ export default function ViewCellModal({
   onDeleted,
 }: {
   cell: CellRow;
+  user: User | null;
   isAdmin: boolean;
   celebrateTotal?: number | null;
   celebrateStreak?: number | null;
@@ -102,6 +114,9 @@ export default function ViewCellModal({
   const [error, setError] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [uploaderProfile, setUploaderProfile] = useState<PublicProfile | null>(null);
+  const [reactionCounts, setReactionCounts] = useState<ReactionCounts | null>(null);
+  const [myReaction, setMyReactionState] = useState<Emotion | null>(null);
+  const [reacting, setReacting] = useState(false);
 
   useEffect(() => {
     if (cell.cell_type !== "image") return;
@@ -111,6 +126,51 @@ export default function ViewCellModal({
         // Social links just won't show if this fails.
       });
   }, [cell.cell_type, cell.created_by]);
+
+  useEffect(() => {
+    if (cell.cell_type !== "image") return;
+    fetchReactionCounts(cell.id)
+      .then(setReactionCounts)
+      .catch(() => setReactionCounts(null));
+  }, [cell.cell_type, cell.id]);
+
+  useEffect(() => {
+    if (cell.cell_type !== "image" || !user) {
+      setMyReactionState(null);
+      return;
+    }
+    fetchMyReaction(cell.id, user.id)
+      .then(setMyReactionState)
+      .catch(() => setMyReactionState(null));
+  }, [cell.cell_type, cell.id, user]);
+
+  // Clicking the currently-picked emotion again removes it. Optimistic —
+  // updates local counts immediately rather than waiting on a refetch,
+  // since a reaction isn't critical enough to justify a loading state.
+  const handleReact = async (emotion: Emotion) => {
+    if (!user || reacting) return;
+    const isRemoving = myReaction === emotion;
+    setReacting(true);
+    try {
+      if (isRemoving) {
+        await clearMyReaction(cell.id, user.id);
+      } else {
+        await setMyReaction(cell.id, user.id, emotion);
+      }
+      setReactionCounts((prev) => {
+        const base = prev ?? { inspired: 0, proud: 0, joyful: 0, confident: 0, loved: 0 };
+        const next = { ...base };
+        if (myReaction) next[myReaction] = Math.max(0, next[myReaction] - 1);
+        if (!isRemoving) next[emotion] = next[emotion] + 1;
+        return next;
+      });
+      setMyReactionState(isRemoving ? null : emotion);
+    } catch {
+      // Non-critical — the reaction just silently doesn't register.
+    } finally {
+      setReacting(false);
+    }
+  };
 
   const remove = async () => {
     setRemoving(true);
@@ -189,6 +249,36 @@ export default function ViewCellModal({
               Uploaded by {cell.created_by_name}
               {uploaderProfile && <SocialLinks profile={uploaderProfile} />}
             </span>
+          </div>
+        )}
+
+        {cell.cell_type === "image" && (
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            {EMOTIONS.map(({ emotion, emoji, label }) => {
+              const selected = myReaction === emotion;
+              const count = reactionCounts?.[emotion] ?? 0;
+              return (
+                <button
+                  key={emotion}
+                  type="button"
+                  onClick={() => handleReact(emotion)}
+                  disabled={!user || reacting}
+                  aria-pressed={selected}
+                  aria-label={label}
+                  title={user ? label : "Sign in to react"}
+                  className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors disabled:opacity-50 disabled:cursor-default ${
+                    selected
+                      ? "border-green-600 bg-green-50 dark:border-green-500 dark:bg-green-900/30"
+                      : "border-black/10 dark:border-white/15 hover:bg-black/5 dark:hover:bg-white/5"
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  {count > 0 && (
+                    <span className="text-xs text-black/50 dark:text-white/50">{count}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
