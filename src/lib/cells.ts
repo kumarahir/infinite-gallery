@@ -72,6 +72,27 @@ export async function fetchCellAt(x: number, y: number): Promise<CellRow | null>
   return (data as unknown as CellRow) ?? null;
 }
 
+// Backs opening the gallery centered on the signed-in artist's own most
+// recent upload instead of the default origin — just the coordinates, not
+// the full row, since the caller only needs them to center the view (the
+// normal chunk-loading path fetches the actual cell once panned there).
+export async function fetchLastImageCellByUser(
+  userId: string
+): Promise<{ x: number; y: number } | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cells")
+    .select("x, y")
+    .eq("created_by", userId)
+    .eq("cell_type", "image")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ?? null;
+}
+
 export async function deleteCell(cell: CellRow): Promise<void> {
   const supabase = createClient();
   if (cell.cell_type === "image") {

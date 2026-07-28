@@ -31,6 +31,7 @@ import {
   fetchAllImageCoords,
   fetchCellAt,
   fetchFilteredCells,
+  fetchLastImageCellByUser,
   fetchThemes,
   fetchTotalImageCount,
   type CellCoord,
@@ -295,6 +296,34 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       });
     });
   }, [viewport, isTouchPrimary, cellStep, cellSize, addLocalCell, commitTranslate]);
+
+  // Absent a deep link, a signed-in artist opens the gallery centered on
+  // their own most recently uploaded cell instead of the origin — picking
+  // up where they left off. Guests and never-uploaded users keep the
+  // default origin-centered view (translate starts at {0,0}). Doesn't
+  // prefetch/open the cell like the deep-link effect does — this only
+  // repositions the view; the normal chunk-loading path fills it in once
+  // panned there.
+  const lastCellHandled = useRef(false);
+
+  useEffect(() => {
+    if (lastCellHandled.current || deepLinkCell.current) return;
+    if (viewport.width === 0 && viewport.height === 0) return;
+    lastCellHandled.current = true;
+    if (!user) return;
+
+    fetchLastImageCellByUser(user.id).then((coord) => {
+      if (!coord) return;
+      const { x, y } = coord;
+      const usableHeight = isTouchPrimary
+        ? viewport.height - MOBILE_CONTROLS_HEIGHT
+        : viewport.height;
+      commitTranslate({
+        x: viewport.width / 2 - x * cellStep - cellSize / 2,
+        y: usableHeight / 2 - y * cellStep - cellSize / 2,
+      });
+    });
+  }, [viewport, isTouchPrimary, cellStep, cellSize, user, commitTranslate]);
 
   // Only produces a NEW range object when the visible cell window actually
   // shifts (roughly once per STEP px of movement) rather than on every
