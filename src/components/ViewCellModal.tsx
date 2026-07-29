@@ -14,6 +14,7 @@ import {
   type Emotion,
   type ReactionCounts,
 } from "@/lib/reactions";
+import { fetchPromptForDay } from "@/lib/themePrompts";
 import ShareButton from "./ShareButton";
 
 function SocialLinks({ profile }: { profile: PublicProfile }) {
@@ -117,6 +118,18 @@ export default function ViewCellModal({
   const [reactionCounts, setReactionCounts] = useState<ReactionCounts | null>(null);
   const [myReaction, setMyReactionState] = useState<Emotion | null>(null);
   const [reacting, setReacting] = useState(false);
+  const [promptText, setPromptText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cell.cell_type !== "image" || cell.theme_id == null) return;
+    // Whichever day was live when this was uploaded, not "today" — matches
+    // the same lookup ShareButton uses so the credited prompt is always
+    // the one this sketch was actually made for.
+    const dayOfMonth = new Date(cell.created_at).getUTCDate();
+    fetchPromptForDay(cell.theme_id, dayOfMonth)
+      .then((p) => setPromptText(p?.prompt_text ?? null))
+      .catch(() => setPromptText(null));
+  }, [cell.cell_type, cell.theme_id, cell.created_at]);
 
   useEffect(() => {
     if (cell.cell_type !== "image") return;
@@ -206,6 +219,10 @@ export default function ViewCellModal({
           <p className="text-sm font-medium text-center text-amber-600 dark:text-amber-400">
             🔥 {celebrateStreak}-day upload streak
           </p>
+        )}
+
+        {cell.cell_type === "image" && promptText && (
+          <h2 className="text-center text-lg font-semibold -mb-2">{promptText}</h2>
         )}
 
         {cell.cell_type === "image" && cell.themes?.name && (
