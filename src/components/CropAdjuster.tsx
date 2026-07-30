@@ -12,6 +12,12 @@ const MAX_DISPLAY_WIDTH = 480;
 // without this margin half of each handle would render outside the photo
 // area and get clipped, leaving a thin, hard-to-grab sliver.
 const HANDLE_MARGIN = 18;
+// Reserved for what renders below the photo area within this component
+// (the "drag corners" instructions are above it and already counted via
+// the wrapper's own position; this covers the Cancel/Confirm row plus the
+// modal's own bottom padding) — subtracted from viewport height so a tall
+// portrait photo can't push the modal's Confirm button off-screen.
+const BOTTOM_RESERVE = 100;
 
 export default function CropAdjuster({
   imageUrl,
@@ -43,14 +49,30 @@ export default function CropAdjuster({
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const measure = () => {
-      const available = wrapper.clientWidth - HANDLE_MARGIN * 2;
-      setDisplayWidth(Math.max(100, Math.min(MAX_DISPLAY_WIDTH, available)));
+      const availableWidth = wrapper.clientWidth - HANDLE_MARGIN * 2;
+      const maxWidth = Math.max(100, Math.min(MAX_DISPLAY_WIDTH, availableWidth));
+
+      // Also cap by available viewport height — width alone doesn't know a
+      // portrait photo will render tall enough to push the rest of the
+      // modal (and its Confirm button) off-screen. `top` already reflects
+      // everything rendered above this wrapper (title, prompt, "drag
+      // corners" text), so this adapts to that content automatically
+      // instead of guessing a fixed layout budget.
+      const top = wrapper.getBoundingClientRect().top;
+      const availableHeight = window.innerHeight - top - HANDLE_MARGIN * 2 - BOTTOM_RESERVE;
+      const widthFromHeight = Math.max(100, availableHeight) * (imageWidth / imageHeight);
+
+      setDisplayWidth(Math.min(maxWidth, widthFromHeight));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(wrapper);
-    return () => observer.disconnect();
-  }, []);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [imageWidth, imageHeight]);
 
   // Corners are always stored in the original image's own pixel space (what
   // warpAndClean needs) — only scaled for on-screen display, and unscaled

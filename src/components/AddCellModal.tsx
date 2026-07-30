@@ -345,7 +345,7 @@ export default function AddCellModal({
       >
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-black/50 dark:text-white/50">
-            Add to this cell
+            Add sketch to this cell
           </span>
           <button
             type="button"
@@ -398,45 +398,54 @@ export default function AddCellModal({
               </button>
             </div>
 
-            {tab === "image" && todaysPrompt && (
-              <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
-                <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
-                  Day {todaysPrompt.day_of_month}&rsquo;s prompt
-                </p>
-                <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
-                {todaysPrompt.quote && (
-                  <p className="text-xs italic text-black/60 dark:text-white/60">
-                    &ldquo;{todaysPrompt.quote}&rdquo;
+            {tab === "image" &&
+              todaysPrompt &&
+              (imageStep === "adjusting" || imageStep === "cropped" ? (
+                // Compact form once the user is actively cropping/enhancing —
+                // full quote+instructions card already did its job on the
+                // picker screen, and this step is short on vertical room.
+                <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-sm font-semibold">
+                  {todaysPrompt.prompt_text}
+                </span>
+              ) : (
+                <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
+                  <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
+                    Day {todaysPrompt.day_of_month}&rsquo;s prompt
                   </p>
-                )}
-                <div className="flex flex-col gap-0.5 text-xs">
-                  {todaysPrompt.simple_instruction && (
-                    <p>
-                      <span className="font-medium text-green-700 dark:text-green-400">
-                        Simple —
-                      </span>{" "}
-                      {todaysPrompt.simple_instruction}
+                  <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
+                  {todaysPrompt.quote && (
+                    <p className="text-xs italic text-black/60 dark:text-white/60">
+                      &ldquo;{todaysPrompt.quote}&rdquo;
                     </p>
                   )}
-                  {todaysPrompt.medium_instruction && (
-                    <p>
-                      <span className="font-medium text-amber-700 dark:text-amber-400">
-                        Medium —
-                      </span>{" "}
-                      {todaysPrompt.medium_instruction}
-                    </p>
-                  )}
-                  {todaysPrompt.stretch_instruction && (
-                    <p>
-                      <span className="font-medium text-red-700 dark:text-red-400">
-                        Stretch —
-                      </span>{" "}
-                      {todaysPrompt.stretch_instruction}
-                    </p>
-                  )}
+                  <div className="flex flex-col gap-0.5 text-xs">
+                    {todaysPrompt.simple_instruction && (
+                      <p>
+                        <span className="font-medium text-green-700 dark:text-green-400">
+                          Simple —
+                        </span>{" "}
+                        {todaysPrompt.simple_instruction}
+                      </p>
+                    )}
+                    {todaysPrompt.medium_instruction && (
+                      <p>
+                        <span className="font-medium text-amber-700 dark:text-amber-400">
+                          Medium —
+                        </span>{" "}
+                        {todaysPrompt.medium_instruction}
+                      </p>
+                    )}
+                    {todaysPrompt.stretch_instruction && (
+                      <p>
+                        <span className="font-medium text-red-700 dark:text-red-400">
+                          Stretch —
+                        </span>{" "}
+                        {todaysPrompt.stretch_instruction}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
 
             {tab === "image" ? (
               limitReached ? (
@@ -523,58 +532,34 @@ export default function AddCellModal({
                       {scanError && <p className="text-sm text-red-500">{scanError}</p>}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-3 aspect-square">
-                      <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="w-6 h-6 text-black/40 dark:text-white/40"
-                        >
-                          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                          <circle cx="12" cy="13" r="4" />
-                        </svg>
-                        <span className="text-sm text-black/50 dark:text-white/50">
-                          Take photo
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="hidden"
-                          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-                        />
-                      </label>
-                      <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="w-6 h-6 text-black/40 dark:text-white/40"
-                        >
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <path d="M21 15l-5-5L5 21" />
-                        </svg>
-                        <span className="text-sm text-black/50 dark:text-white/50">
-                          Choose from library
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-                        />
-                      </label>
-                    </div>
+                    <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center aspect-square">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="w-8 h-8 text-black/40 dark:text-white/40"
+                      >
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      <span className="text-sm text-black/50 dark:text-white/50">
+                        Add a sketch
+                      </span>
+                      {/* No `capture` attribute — leaving the picker choice to
+                          the OS shows both "Take Photo" and "Photo Library"
+                          (iOS) or camera/gallery (Android) from one input,
+                          instead of forcing straight to the camera. */}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
                   )}
 
                   <label className="flex flex-col gap-1">
@@ -606,7 +591,7 @@ export default function AddCellModal({
                     }
                     className="rounded-lg bg-green-500 text-white text-sm font-medium py-2 disabled:opacity-40 hover:bg-green-600"
                   >
-                    {busy ? "Uploading…" : "Add image"}
+                    {busy ? "Uploading…" : "Share Sketch"}
                   </button>
                 </div>
               )
