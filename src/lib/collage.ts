@@ -1,3 +1,5 @@
+import { EMOTIONS, totalReactionCount, type ReactionCounts } from "@/lib/reactions";
+
 const COLUMNS = 7;
 const CELL_SIZE = 220;
 const GAP = 8;
@@ -5,9 +7,19 @@ const PADDING = 24;
 const HEADER_HEIGHT = 90;
 const SECTION_GAP = 20;
 const SECTION_TITLE_HEIGHT = 36;
+// Extra room below each top-reacted tile for the emoji breakdown line plus
+// the total-count line.
+const REACTION_LABEL_HEIGHT = 46;
+// Emoji glyphs need an emoji-capable font in the stack — Arial alone
+// renders them as empty boxes on some platforms.
+const EMOJI_FONT_STACK = "Arial, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
 
 export interface CollageSketch {
   imageUrl: string;
+}
+
+export interface CollageTopReactedSketch extends CollageSketch {
+  counts: ReactionCounts;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -63,15 +75,16 @@ export function collageFilename(name: string, themeName: string): string {
 // Builds a PNG collage: a title/theme/count header above the sketches
 // packed left-to-right, top-to-bottom, 7 per row (per COLUMNS), wrapping to
 // as many rows as needed for the last partial row. `topReacted` (already
-// selected/ordered by the caller — see fetchReactionTotalsByCellIds in
-// reactions.ts) adds a highlight row below the main grid; omitted entirely
-// (no title, no extra canvas height) when empty rather than showing an
-// empty section.
+// selected/ordered by the caller — see fetchReactionBreakdownByCellIds in
+// reactions.ts) adds a highlight row below the main grid, each tile
+// captioned with its reaction breakdown and total; omitted entirely (no
+// title, no extra canvas height) when empty rather than showing an empty
+// section.
 export async function buildCollage(params: {
   name: string;
   themeName: string;
   sketches: CollageSketch[];
-  topReacted?: CollageSketch[];
+  topReacted?: CollageTopReactedSketch[];
 }): Promise<Blob> {
   const { name, themeName, sketches, topReacted = [] } = params;
   const count = sketches.length;
@@ -80,7 +93,9 @@ export async function buildCollage(params: {
   const rows = Math.ceil(count / COLUMNS);
   const gridHeight = rows * CELL_SIZE + (rows - 1) * GAP;
   const hasTopReacted = topReacted.length > 0;
-  const topReactedHeight = hasTopReacted ? SECTION_GAP + SECTION_TITLE_HEIGHT + CELL_SIZE : 0;
+  const topReactedHeight = hasTopReacted
+    ? SECTION_GAP + SECTION_TITLE_HEIGHT + CELL_SIZE + REACTION_LABEL_HEIGHT
+    : 0;
 
   const width = PADDING * 2 + COLUMNS * CELL_SIZE + (COLUMNS - 1) * GAP;
   const height = PADDING * 2 + HEADER_HEIGHT + gridHeight + topReactedHeight;
@@ -124,9 +139,29 @@ export async function buildCollage(params: {
     ctx.fillText("Sketches with most reactions", PADDING, sectionTop + 24);
 
     const tilesTop = sectionTop + SECTION_TITLE_HEIGHT;
+    ctx.textAlign = "center";
     topImages.forEach((img, i) => {
       const x = PADDING + i * (CELL_SIZE + GAP);
       drawCover(ctx, img, x, tilesTop, CELL_SIZE);
+
+      const counts = topReacted[i].counts;
+      const centerX = x + CELL_SIZE / 2;
+      const breakdown = EMOTIONS.filter(({ emotion }) => counts[emotion] > 0)
+        .map(({ emotion, emoji }) => `${emoji} ${counts[emotion]}`)
+        .join("   ");
+      const total = totalReactionCount(counts);
+
+      ctx.fillStyle = "#111111";
+      ctx.font = `20px ${EMOJI_FONT_STACK}`;
+      ctx.fillText(breakdown, centerX, tilesTop + CELL_SIZE + 24);
+
+      ctx.fillStyle = "#666666";
+      ctx.font = "14px Arial, sans-serif";
+      ctx.fillText(
+        `${total} reaction${total === 1 ? "" : "s"}`,
+        centerX,
+        tilesTop + CELL_SIZE + 42
+      );
     });
   }
 

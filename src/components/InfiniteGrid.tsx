@@ -40,7 +40,11 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { buildCollage, collageFilename } from "@/lib/collage";
-import { fetchReactionTotalsByCellIds } from "@/lib/reactions";
+import {
+  fetchReactionBreakdownByCellIds,
+  totalReactionCount,
+  type ReactionCounts,
+} from "@/lib/reactions";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -277,14 +281,18 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       // Highlight row for whichever of these sketches have any reactions at
       // all — omitted entirely (see buildCollage) if none do, rather than
       // showing an empty "most reactions" section.
-      const totals = await fetchReactionTotalsByCellIds(withImage.map((c) => c.id)).catch(
-        () => new Map<number, number>()
+      const breakdown = await fetchReactionBreakdownByCellIds(withImage.map((c) => c.id)).catch(
+        () => new Map<number, ReactionCounts>()
       );
       const topReacted = withImage
-        .filter((c) => (totals.get(c.id) ?? 0) > 0)
-        .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0))
+        .map((c) => ({ cell: c, counts: breakdown.get(c.id) }))
+        .filter((r): r is { cell: CellRow; counts: ReactionCounts } => !!r.counts)
+        .sort((a, b) => totalReactionCount(b.counts) - totalReactionCount(a.counts))
         .slice(0, 3)
-        .map((c) => ({ imageUrl: getPublicImageUrl(c.thumbnail_path ?? c.image_path ?? "") }));
+        .map(({ cell, counts }) => ({
+          imageUrl: getPublicImageUrl(cell.thumbnail_path ?? cell.image_path ?? ""),
+          counts,
+        }));
 
       const blob = await buildCollage({
         name,

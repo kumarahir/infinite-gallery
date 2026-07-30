@@ -18,6 +18,10 @@ function emptyCounts(): ReactionCounts {
   return { inspired: 0, proud: 0, joyful: 0, confident: 0, loved: 0 };
 }
 
+export function totalReactionCount(counts: ReactionCounts): number {
+  return EMOTIONS.reduce((sum, { emotion }) => sum + counts[emotion], 0);
+}
+
 export async function fetchReactionCounts(cellId: number): Promise<ReactionCounts> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -35,24 +39,28 @@ export async function fetchReactionCounts(cellId: number): Promise<ReactionCount
 }
 
 // Backs the collage's "most reactions" highlight — one query for every
-// candidate cell rather than one per cell, summed (across all emotions,
-// not per-emotion) client-side to rank by total reaction count.
-export async function fetchReactionTotalsByCellIds(
+// candidate cell rather than one per cell, aggregated per-emotion
+// client-side. Ranking uses totalReactionCount(); the full breakdown is
+// also what gets printed under each highlighted sketch.
+export async function fetchReactionBreakdownByCellIds(
   cellIds: number[]
-): Promise<Map<number, number>> {
+): Promise<Map<number, ReactionCounts>> {
   if (cellIds.length === 0) return new Map();
   const supabase = createClient();
   const { data, error } = await supabase
     .from("cell_reactions")
-    .select("cell_id")
+    .select("cell_id, emotion")
     .in("cell_id", cellIds);
   if (error) throw error;
 
-  const totals = new Map<number, number>();
+  const breakdown = new Map<number, ReactionCounts>();
   for (const row of data ?? []) {
-    totals.set(row.cell_id, (totals.get(row.cell_id) ?? 0) + 1);
+    const emotion = row.emotion as Emotion;
+    const counts = breakdown.get(row.cell_id) ?? emptyCounts();
+    counts[emotion] = (counts[emotion] ?? 0) + 1;
+    breakdown.set(row.cell_id, counts);
   }
-  return totals;
+  return breakdown;
 }
 
 export async function fetchMyReaction(cellId: number, userId: string): Promise<Emotion | null> {
