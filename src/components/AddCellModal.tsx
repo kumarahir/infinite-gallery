@@ -385,7 +385,7 @@ export default function AddCellModal({
                   tab === "image" ? "bg-background shadow-sm" : "opacity-60"
                 }`}
               >
-                Upload Image
+                Upload Sketch
               </button>
               <button
                 type="button"
@@ -532,7 +532,7 @@ export default function AddCellModal({
                       {scanError && <p className="text-sm text-red-500">{scanError}</p>}
                     </div>
                   ) : (
-                    <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center aspect-square">
+                    <label className="flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-black/15 dark:border-white/20 cursor-pointer hover:border-black/30 dark:hover:border-white/40 transition-colors p-2 text-center h-32">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
@@ -541,13 +541,13 @@ export default function AddCellModal({
                         strokeWidth={2}
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="w-8 h-8 text-black/40 dark:text-white/40"
+                        className="w-7 h-7 text-black/40 dark:text-white/40"
                       >
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                         <circle cx="12" cy="13" r="4" />
                       </svg>
                       <span className="text-sm text-black/50 dark:text-white/50">
-                        Add a sketch
+                        Upload a Sketch
                       </span>
                       {/* No `capture` attribute — leaving the picker choice to
                           the OS shows both "Take Photo" and "Photo Library"
