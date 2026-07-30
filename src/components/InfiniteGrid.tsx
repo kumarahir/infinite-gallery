@@ -34,10 +34,12 @@ import {
   fetchLastImageCellByUser,
   fetchThemes,
   fetchTotalImageCount,
+  getPublicImageUrl,
   type CellCoord,
   type CellRow,
   type Theme,
 } from "@/lib/cells";
+import { buildCollage, collageFilename } from "@/lib/collage";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -248,6 +250,46 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       .then(setFilteredCells)
       .catch(() => setFilteredCells([]));
   }, [filterActive, onlyMine, themeFilterId, user?.id]);
+
+  // Collage download — only offered for the "my sketches within a theme"
+  // combination (both onlyMine and themeFilterId set), so every collage has
+  // a coherent scope: one person, one theme. onlyMine alone would be
+  // unbounded (every sketch this user has ever made); themeFilterId alone
+  // wouldn't be personal (everyone's sketches in that theme).
+  const [downloadingCollage, setDownloadingCollage] = useState(false);
+  const collageReady = !!user && onlyMine && themeFilterId != null;
+
+  const handleDownloadCollage = useCallback(async () => {
+    if (!collageReady || filteredCells.length === 0 || downloadingCollage) return;
+    setDownloadingCollage(true);
+    try {
+      const theme = themes.find((t) => t.id === themeFilterId);
+      // Oldest-first — reads as a progression through the month rather than
+      // the newest-first order the real-time filtered grid uses.
+      const sorted = [...filteredCells].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      const name = sorted[0]?.created_by_name ?? "My";
+      const themeName = theme?.name ?? "Theme";
+      const blob = await buildCollage({
+        name,
+        themeName,
+        sketches: sorted
+          .filter((c) => c.thumbnail_path || c.image_path)
+          .map((c) => ({ imageUrl: getPublicImageUrl(c.thumbnail_path ?? c.image_path ?? "") })),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = collageFilename(name, themeName);
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to build sketch collage", err);
+    } finally {
+      setDownloadingCollage(false);
+    }
+  }, [collageReady, filteredCells, downloadingCollage, themes, themeFilterId]);
 
   // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid
   // on it. Parsed once on mount (and stripped from the URL immediately);
@@ -715,6 +757,35 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             {user && (
               <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
             )}
+            {collageReady && (
+              <button
+                type="button"
+                onClick={handleDownloadCollage}
+                disabled={downloadingCollage || filteredCells.length === 0}
+                aria-label="Download sketch collage"
+                title="Download sketch collage"
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-40"
+              >
+                {downloadingCollage ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-5 h-5"
+                  >
+                    <path d="M12 3v12" />
+                    <path d="m7 10 5 5 5-5" />
+                    <path d="M5 21h14" />
+                  </svg>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleZoom}
@@ -793,6 +864,35 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
           {user && (
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
+          )}
+          {collageReady && (
+            <button
+              type="button"
+              onClick={handleDownloadCollage}
+              disabled={downloadingCollage || filteredCells.length === 0}
+              aria-label="Download sketch collage"
+              title="Download sketch collage"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80 disabled:opacity-40"
+            >
+              {downloadingCollage ? (
+                <div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-5 h-5"
+                >
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+              )}
+            </button>
           )}
           <button
             type="button"
