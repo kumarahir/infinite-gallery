@@ -3,6 +3,8 @@ const CELL_SIZE = 220;
 const GAP = 8;
 const PADDING = 24;
 const HEADER_HEIGHT = 90;
+const SECTION_GAP = 20;
+const SECTION_TITLE_HEIGHT = 36;
 
 export interface CollageSketch {
   imageUrl: string;
@@ -60,19 +62,28 @@ export function collageFilename(name: string, themeName: string): string {
 
 // Builds a PNG collage: a title/theme/count header above the sketches
 // packed left-to-right, top-to-bottom, 7 per row (per COLUMNS), wrapping to
-// as many rows as needed for the last partial row.
+// as many rows as needed for the last partial row. `topReacted` (already
+// selected/ordered by the caller — see fetchReactionTotalsByCellIds in
+// reactions.ts) adds a highlight row below the main grid; omitted entirely
+// (no title, no extra canvas height) when empty rather than showing an
+// empty section.
 export async function buildCollage(params: {
   name: string;
   themeName: string;
   sketches: CollageSketch[];
+  topReacted?: CollageSketch[];
 }): Promise<Blob> {
-  const { name, themeName, sketches } = params;
+  const { name, themeName, sketches, topReacted = [] } = params;
   const count = sketches.length;
   if (count === 0) throw new Error("No sketches to build a collage from.");
 
   const rows = Math.ceil(count / COLUMNS);
+  const gridHeight = rows * CELL_SIZE + (rows - 1) * GAP;
+  const hasTopReacted = topReacted.length > 0;
+  const topReactedHeight = hasTopReacted ? SECTION_GAP + SECTION_TITLE_HEIGHT + CELL_SIZE : 0;
+
   const width = PADDING * 2 + COLUMNS * CELL_SIZE + (COLUMNS - 1) * GAP;
-  const height = PADDING * 2 + HEADER_HEIGHT + rows * CELL_SIZE + (rows - 1) * GAP;
+  const height = PADDING * 2 + HEADER_HEIGHT + gridHeight + topReactedHeight;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -92,7 +103,11 @@ export async function buildCollage(params: {
   ctx.font = "18px Arial, sans-serif";
   ctx.fillText(`${themeName} · ${count} sketch${count === 1 ? "" : "es"}`, width / 2, PADDING + 62);
 
-  const images = await Promise.all(sketches.map((s) => loadImage(s.imageUrl)));
+  const [images, topImages] = await Promise.all([
+    Promise.all(sketches.map((s) => loadImage(s.imageUrl))),
+    Promise.all(topReacted.map((s) => loadImage(s.imageUrl))),
+  ]);
+
   images.forEach((img, i) => {
     const col = i % COLUMNS;
     const row = Math.floor(i / COLUMNS);
@@ -100,6 +115,20 @@ export async function buildCollage(params: {
     const y = PADDING + HEADER_HEIGHT + row * (CELL_SIZE + GAP);
     drawCover(ctx, img, x, y, CELL_SIZE);
   });
+
+  if (hasTopReacted) {
+    const sectionTop = PADDING + HEADER_HEIGHT + gridHeight + SECTION_GAP;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#111111";
+    ctx.font = "600 22px Arial, sans-serif";
+    ctx.fillText("Sketches with most reactions", PADDING, sectionTop + 24);
+
+    const tilesTop = sectionTop + SECTION_TITLE_HEIGHT;
+    topImages.forEach((img, i) => {
+      const x = PADDING + i * (CELL_SIZE + GAP);
+      drawCover(ctx, img, x, tilesTop, CELL_SIZE);
+    });
+  }
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {

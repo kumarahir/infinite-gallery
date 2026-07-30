@@ -34,6 +34,27 @@ export async function fetchReactionCounts(cellId: number): Promise<ReactionCount
   return counts;
 }
 
+// Backs the collage's "most reactions" highlight — one query for every
+// candidate cell rather than one per cell, summed (across all emotions,
+// not per-emotion) client-side to rank by total reaction count.
+export async function fetchReactionTotalsByCellIds(
+  cellIds: number[]
+): Promise<Map<number, number>> {
+  if (cellIds.length === 0) return new Map();
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cell_reactions")
+    .select("cell_id")
+    .in("cell_id", cellIds);
+  if (error) throw error;
+
+  const totals = new Map<number, number>();
+  for (const row of data ?? []) {
+    totals.set(row.cell_id, (totals.get(row.cell_id) ?? 0) + 1);
+  }
+  return totals;
+}
+
 export async function fetchMyReaction(cellId: number, userId: string): Promise<Emotion | null> {
   const supabase = createClient();
   const { data, error } = await supabase

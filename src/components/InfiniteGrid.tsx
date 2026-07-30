@@ -40,6 +40,7 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { buildCollage, collageFilename } from "@/lib/collage";
+import { fetchReactionTotalsByCellIds } from "@/lib/reactions";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
 const VELOCITY_STOP_THRESHOLD = 0.02; // px per tick
@@ -271,12 +272,27 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       );
       const name = sorted[0]?.created_by_name ?? "My";
       const themeName = theme?.name ?? "Theme";
+      const withImage = sorted.filter((c) => c.thumbnail_path || c.image_path);
+
+      // Highlight row for whichever of these sketches have any reactions at
+      // all — omitted entirely (see buildCollage) if none do, rather than
+      // showing an empty "most reactions" section.
+      const totals = await fetchReactionTotalsByCellIds(withImage.map((c) => c.id)).catch(
+        () => new Map<number, number>()
+      );
+      const topReacted = withImage
+        .filter((c) => (totals.get(c.id) ?? 0) > 0)
+        .sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0))
+        .slice(0, 3)
+        .map((c) => ({ imageUrl: getPublicImageUrl(c.thumbnail_path ?? c.image_path ?? "") }));
+
       const blob = await buildCollage({
         name,
         themeName,
-        sketches: sorted
-          .filter((c) => c.thumbnail_path || c.image_path)
-          .map((c) => ({ imageUrl: getPublicImageUrl(c.thumbnail_path ?? c.image_path ?? "") })),
+        sketches: withImage.map((c) => ({
+          imageUrl: getPublicImageUrl(c.thumbnail_path ?? c.image_path ?? ""),
+        })),
+        topReacted,
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
