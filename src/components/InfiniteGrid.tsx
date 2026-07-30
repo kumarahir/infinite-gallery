@@ -302,10 +302,32 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         })),
         topReacted,
       });
+      const filename = collageFilename(name, themeName);
+
+      // On mobile, an <a download> click doesn't save into Photos/Gallery —
+      // iOS Safari in particular routes it through "Save to Files" instead,
+      // since it isn't recognized as a savable image asset that way. Sharing
+      // the actual File through the native share sheet (same mechanism
+      // ShareButton already uses) surfaces a real "Save Image" option that
+      // saves to Photos/Gallery. Desktop browsers generally don't support
+      // sharing files at all, so canShare returns false there and it falls
+      // through to the plain anchor download, which is the expected desktop
+      // behavior.
+      const file = new File([blob], filename, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
+          // Fall through to the anchor-download fallback below.
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = collageFilename(name, themeName);
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
