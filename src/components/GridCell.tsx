@@ -1,6 +1,7 @@
 import { memo } from "react";
 import Image from "next/image";
 import { getPublicImageUrl, type CellRow } from "@/lib/cells";
+import type { ReactionSummary } from "@/lib/reactions";
 
 function GridCell({
   x,
@@ -10,6 +11,8 @@ function GridCell({
   readOnly,
   cellSize,
   step,
+  reactionSummary,
+  showReactionBadge,
 }: {
   x: number;
   y: number;
@@ -18,6 +21,11 @@ function GridCell({
   readOnly?: boolean;
   cellSize: number;
   step: number;
+  reactionSummary?: ReactionSummary;
+  // Faded out while the canvas is panning/settling — a badge that
+  // stays glued to a thumbnail whizzing past mid-drag reads as jittery
+  // clutter rather than a calm summary.
+  showReactionBadge?: boolean;
 }) {
   const style: React.CSSProperties = {
     position: "absolute",
@@ -81,6 +89,15 @@ function GridCell({
           draggable={false}
           className="w-full h-full object-cover pointer-events-none"
         />
+        {reactionSummary && (
+          <span
+            className={`absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] leading-none text-white pointer-events-none transition-opacity duration-150 ${
+              showReactionBadge ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {reactionSummary.emoji} {reactionSummary.total}
+          </span>
+        )}
       </div>
     );
   }

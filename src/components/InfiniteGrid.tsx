@@ -41,9 +41,11 @@ import {
 } from "@/lib/cells";
 import { buildCollage, collageFilename } from "@/lib/collage";
 import {
+  fetchAllReactionSummaries,
   fetchReactionBreakdownByCellIds,
   totalReactionCount,
   type ReactionCounts,
+  type ReactionSummary,
 } from "@/lib/reactions";
 
 const FRICTION = 0.94; // velocity decay per 16.67ms tick
@@ -78,6 +80,15 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
   const [radarVisible, setRadarVisible] = useState(false);
   const minimapRef = useRef<MinimapRadarHandle>(null);
+  const [reactionSummaries, setReactionSummaries] = useState<Map<number, ReactionSummary>>(
+    new Map()
+  );
+  // Reaction badges fade out while the view is actually moving (drag,
+  // momentum coast, zoom, recenter, deep-link centering — anything that
+  // changes `translate`) and back in shortly after it stops, rather than
+  // tracking each of those animations individually.
+  const [gridSettled, setGridSettled] = useState(true);
+  const settleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Discrete thumbnail zoom, changed via the +/- buttons. cellStep is named
   // distinctly from the rAF-callback `step` params used elsewhere in this
@@ -233,6 +244,17 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       .then(setDotCoords)
       .catch(() => {
         // Radar just shows no dots if this fails — not worth surfacing an error for.
+      });
+  }, []);
+
+  // Fetched once for the grid's reaction badges — not kept in sync with
+  // new reactions afterward (see fetchAllReactionSummaries in reactions.ts),
+  // same tradeoff as dotCoords above.
+  useEffect(() => {
+    fetchAllReactionSummaries()
+      .then(setReactionSummaries)
+      .catch(() => {
+        // Badges just won't show if this fails.
       });
   }, []);
 
@@ -441,6 +463,15 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         : { minX, maxX, minY, maxY }
     );
   }, [translate, viewport, cellStep]);
+
+  useEffect(() => {
+    setGridSettled(false);
+    if (settleTimeout.current) clearTimeout(settleTimeout.current);
+    settleTimeout.current = setTimeout(() => setGridSettled(true), 150);
+    return () => {
+      if (settleTimeout.current) clearTimeout(settleTimeout.current);
+    };
+  }, [translate]);
 
   useEffect(() => {
     if (!range || filterActive) return;
@@ -738,6 +769,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               readOnly={filterActive}
               cellSize={cellSize}
               step={cellStep}
+              reactionSummary={cell ? reactionSummaries.get(cell.id) : undefined}
+              showReactionBadge={gridSettled}
             />
           ))}
         </div>
