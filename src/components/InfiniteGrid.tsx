@@ -83,6 +83,20 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [reactionSummaries, setReactionSummaries] = useState<Map<number, ReactionSummary>>(
     new Map()
   );
+  // Lets ViewCellModal push a cell's new reaction state straight into the
+  // grid's badge map the instant a reaction is set/changed/cleared, instead
+  // of waiting for the next full page load's bulk fetch to catch up.
+  const handleReactionSummaryChange = useCallback(
+    (cellId: number, summary: ReactionSummary | null) => {
+      setReactionSummaries((prev) => {
+        const next = new Map(prev);
+        if (summary) next.set(cellId, summary);
+        else next.delete(cellId);
+        return next;
+      });
+    },
+    []
+  );
   // Reaction badges fade out while the view is actually moving (drag,
   // momentum coast, zoom, recenter, deep-link centering — anything that
   // changes `translate`) and back in shortly after it stops, rather than
@@ -247,9 +261,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       });
   }, []);
 
-  // Fetched once for the grid's reaction badges — not kept in sync with
-  // new reactions afterward (see fetchAllReactionSummaries in reactions.ts),
-  // same tradeoff as dotCoords above.
+  // Seeds the grid's reaction badges on load; individual cells are kept
+  // live afterward via handleReactionSummaryChange, not by re-running this.
   useEffect(() => {
     fetchAllReactionSummaries()
       .then(setReactionSummaries)
@@ -1030,6 +1043,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               isAdmin={isAdmin}
               onClose={closeModal}
               onDeleted={handleCellDeleted}
+              onReactionChange={handleReactionSummaryChange}
             />
           ) : null;
         }
@@ -1050,6 +1064,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             }
             onClose={closeModal}
             onDeleted={handleCellDeleted}
+            onReactionChange={handleReactionSummaryChange}
           />
         ) : (
           <AddCellModal

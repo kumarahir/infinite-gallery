@@ -68,12 +68,26 @@ export interface ReactionSummary {
   total: number;
 }
 
+// Reduces a full per-emotion breakdown down to what a grid badge shows:
+// the dominant emotion's emoji plus a total count. Shared by the bulk fetch
+// below and by ViewCellModal's optimistic update, so "which emoji wins"
+// is computed the same way whether it comes from a fresh query or a local
+// reaction just made. Returns null when there's nothing to show — a
+// cell's last reaction being removed should make its badge disappear, not
+// show "0".
+export function reactionSummaryFromCounts(counts: ReactionCounts): ReactionSummary | null {
+  const total = totalReactionCount(counts);
+  if (total === 0) return null;
+  const top = EMOTIONS.reduce((best, cur) => (counts[cur.emotion] > counts[best.emotion] ? cur : best));
+  return { emoji: top.emoji, total };
+}
+
 // Backs the grid's per-cell reaction badges — fetches every reaction row
 // once (same full-fetch approach as fetchAllImageCoords in cells.ts; this
-// app's scale doesn't yet need per-chunk pagination) and reduces each
-// cell down to just its dominant emotion's emoji plus a total count, since
-// a grid thumbnail only has room for one compact badge, not a full
-// breakdown like the collage's highlight row shows.
+// app's scale doesn't yet need per-chunk pagination) and reduces each cell
+// down to a badge via reactionSummaryFromCounts. Not kept live after this —
+// see InfiniteGrid's onReactionChange wiring for how individual cells
+// update afterward without a full re-fetch.
 export async function fetchAllReactionSummaries(): Promise<Map<number, ReactionSummary>> {
   const supabase = createClient();
   const { data, error } = await supabase.from("cell_reactions").select("cell_id, emotion");
@@ -89,10 +103,8 @@ export async function fetchAllReactionSummaries(): Promise<Map<number, ReactionS
 
   const summaries = new Map<number, ReactionSummary>();
   for (const [cellId, counts] of perCell) {
-    const top = EMOTIONS.reduce((best, cur) =>
-      counts[cur.emotion] > counts[best.emotion] ? cur : best
-    );
-    summaries.set(cellId, { emoji: top.emoji, total: totalReactionCount(counts) });
+    const summary = reactionSummaryFromCounts(counts);
+    if (summary) summaries.set(cellId, summary);
   }
   return summaries;
 }

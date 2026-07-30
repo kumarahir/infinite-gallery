@@ -9,10 +9,12 @@ import {
   clearMyReaction,
   fetchMyReaction,
   fetchReactionCounts,
+  reactionSummaryFromCounts,
   setMyReaction,
   EMOTIONS,
   type Emotion,
   type ReactionCounts,
+  type ReactionSummary,
 } from "@/lib/reactions";
 import { fetchPromptForDay } from "@/lib/themePrompts";
 import ShareButton from "./ShareButton";
@@ -101,6 +103,7 @@ export default function ViewCellModal({
   celebrateStreak,
   onClose,
   onDeleted,
+  onReactionChange,
 }: {
   cell: CellRow;
   user: User | null;
@@ -109,6 +112,9 @@ export default function ViewCellModal({
   celebrateStreak?: number | null;
   onClose: () => void;
   onDeleted: (x: number, y: number) => void;
+  // Lets the grid update this cell's reaction badge immediately instead of
+  // waiting for the next full page load's bulk fetch to catch up.
+  onReactionChange?: (cellId: number, summary: ReactionSummary | null) => void;
 }) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -170,14 +176,13 @@ export default function ViewCellModal({
       } else {
         await setMyReaction(cell.id, user.id, emotion);
       }
-      setReactionCounts((prev) => {
-        const base = prev ?? { inspired: 0, proud: 0, joyful: 0, confident: 0, loved: 0 };
-        const next = { ...base };
-        if (myReaction) next[myReaction] = Math.max(0, next[myReaction] - 1);
-        if (!isRemoving) next[emotion] = next[emotion] + 1;
-        return next;
-      });
+      const base = reactionCounts ?? { inspired: 0, proud: 0, joyful: 0, confident: 0, loved: 0 };
+      const next = { ...base };
+      if (myReaction) next[myReaction] = Math.max(0, next[myReaction] - 1);
+      if (!isRemoving) next[emotion] = next[emotion] + 1;
+      setReactionCounts(next);
       setMyReactionState(isRemoving ? null : emotion);
+      onReactionChange?.(cell.id, reactionSummaryFromCounts(next));
     } catch {
       // Non-critical — the reaction just silently doesn't register.
     } finally {
