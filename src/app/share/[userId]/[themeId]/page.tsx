@@ -7,6 +7,7 @@ import { getPublicImageUrl } from "@/lib/cells";
 import { reactionSummaryFromCounts, type Emotion, type ReactionCounts } from "@/lib/reactions";
 import DefaultAvatar from "@/components/DefaultAvatar";
 import SocialLinks from "@/components/SocialLinks";
+import ReactionPicker from "@/components/ReactionPicker";
 import type { PublicProfile } from "@/lib/profiles";
 
 interface SharePageParams {
@@ -65,7 +66,19 @@ export default async function SharePage({
   const { profile, theme } = await fetchHeaderData(userId, themeId);
   if (!profile || !theme) notFound();
 
-  const [{ count: totalSketches }, { data: cellRows }, { data: promptRows }] = await Promise.all([
+  // Whoever has this link open and is currently logged in can react to
+  // these sketches right here — same cell_reactions table the rest of the
+  // app reads/writes, so it shows up in the grid badge, ViewCellModal, and
+  // the collage highlight exactly like any other reaction would.
+  const [
+    {
+      data: { user: viewerUser },
+    },
+    { count: totalSketches },
+    { data: cellRows },
+    { data: promptRows },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
     supabase
       .from("cells")
       .select("id", { count: "exact", head: true })
@@ -180,11 +193,17 @@ export default async function SharePage({
                   unoptimized
                 />
               </div>
-              {sketch.reaction && (
-                <p className="text-sm mt-2">
-                  {sketch.reaction.emoji} {sketch.reaction.total} reaction
-                  {sketch.reaction.total === 1 ? "" : "s"}
-                </p>
+              {viewerUser ? (
+                <div className="mt-2">
+                  <ReactionPicker cellId={sketch.id} user={viewerUser} />
+                </div>
+              ) : (
+                sketch.reaction && (
+                  <p className="text-sm mt-2">
+                    {sketch.reaction.emoji} {sketch.reaction.total} reaction
+                    {sketch.reaction.total === 1 ? "" : "s"}
+                  </p>
+                )
               )}
             </div>
           ))}
