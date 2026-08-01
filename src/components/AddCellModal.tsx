@@ -114,11 +114,12 @@ export default function AddCellModal({
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
-  // Only ever populated for the default theme (see the fetchThemes effect
-  // below) — backs both the "Prompt" dropdown and the quote/instructions
-  // card, which now shows whichever prompt is currently selected rather
-  // than always today's.
-  const [defaultThemePrompts, setDefaultThemePrompts] = useState<ThemePrompt[]>([]);
+  // Prompts for whichever theme is currently selected in the dropdown below
+  // (refetched on every theme change — see the effect further down) — backs
+  // both the "Prompt" dropdown and the quote/instructions card. Empty for
+  // "Generic" (that theme uses the keyword box instead) and for any theme
+  // with no prompts of its own.
+  const [selectedThemePrompts, setSelectedThemePrompts] = useState<ThemePrompt[]>([]);
   const [selectedPromptId, setSelectedPromptId] = useState<number | null>(null);
   // Free-text keywords typed for the "Generic" theme — each becomes its own
   // new prompt row for that theme on submit (see addGenericThemeKeywords),
@@ -127,7 +128,7 @@ export default function AddCellModal({
 
   const defaultTheme = themes.find((t) => t.is_default) ?? null;
   const genericTheme = themes.find((t) => t.name === "Generic") ?? null;
-  const selectedPrompt = defaultThemePrompts.find((p) => p.id === selectedPromptId) ?? null;
+  const selectedPrompt = selectedThemePrompts.find((p) => p.id === selectedPromptId) ?? null;
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -159,26 +160,49 @@ export default function AddCellModal({
         setThemes(list);
         const defaultTheme = list.find((t) => t.is_default);
         setThemeId(defaultTheme?.id ?? list[0]?.id ?? null);
-        if (!defaultTheme) return;
-        // Fetched once regardless of which theme ends up selected in the
-        // dropdown below — the prompt picker/card only render while the
-        // default theme is actually selected, but there's no need to
-        // refetch every time the user switches back to it.
-        fetchThemePrompts(defaultTheme.id)
-          .then((prompts) => {
-            setDefaultThemePrompts(prompts);
-            const dayOfMonth = new Date(
-              new Date().toISOString().slice(0, 10) + "T00:00:00Z"
-            ).getUTCDate();
-            const today = prompts.find((p) => p.day_of_month === dayOfMonth);
-            setSelectedPromptId(today?.id ?? null);
-          })
-          .catch(() => setDefaultThemePrompts([]));
       })
       .catch(() => {
         // Leave themes empty — the submit button stays disabled in that case.
       });
   }, []);
+
+  // Refetches whenever the theme dropdown changes — any theme can have its
+  // own prompt list, not just the current default. "Generic" has none (it
+  // uses the keyword box instead, see below). Only the default theme also
+  // auto-selects "today's" prompt; other themes start on "No specific
+  // prompt" since there's no meaningful "today" for a theme that isn't the
+  // one currently featured.
+  useEffect(() => {
+    if (themeId == null || (genericTheme && themeId === genericTheme.id)) {
+      setSelectedThemePrompts([]);
+      setSelectedPromptId(null);
+      return;
+    }
+    let cancelled = false;
+    fetchThemePrompts(themeId)
+      .then((prompts) => {
+        if (cancelled) return;
+        setSelectedThemePrompts(prompts);
+        if (defaultTheme && themeId === defaultTheme.id) {
+          const dayOfMonth = new Date(
+            new Date().toISOString().slice(0, 10) + "T00:00:00Z"
+          ).getUTCDate();
+          const today = prompts.find((p) => p.day_of_month === dayOfMonth);
+          setSelectedPromptId(today?.id ?? null);
+        } else {
+          setSelectedPromptId(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedThemePrompts([]);
+          setSelectedPromptId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [themeId, defaultTheme?.id, genericTheme?.id]);
 
   const resetImageFlow = () => {
     setImageStep("picker");
@@ -315,7 +339,7 @@ export default function AddCellModal({
         thumbnailBlob: thumbnail.blob,
         userId: user.id,
         themeId,
-        themePromptId: defaultTheme && themeId === defaultTheme.id ? selectedPromptId : null,
+        themePromptId: selectedThemePrompts.length > 0 ? selectedPromptId : null,
       });
       const streak = await fetchMyStreak(user.id).catch(() => undefined);
       onCreated(cell, streak);
@@ -426,7 +450,6 @@ export default function AddCellModal({
             </div>
 
             {tab === "image" &&
-              themeId === defaultTheme?.id &&
               selectedPrompt &&
               (imageStep === "adjusting" || imageStep === "cropped" ? (
                 // Compact form once the user is actively cropping/enhancing —
@@ -607,7 +630,7 @@ export default function AddCellModal({
                     </select>
                   </label>
 
-                  {themeId === defaultTheme?.id && defaultThemePrompts.length > 0 && (
+                  {selectedThemePrompts.length > 0 && (
                     <label className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-black/50 dark:text-white/50">
                         Prompt
@@ -620,7 +643,7 @@ export default function AddCellModal({
                         className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
                       >
                         <option value="">No specific prompt</option>
-                        {defaultThemePrompts.map((prompt) => (
+                        {selectedThemePrompts.map((prompt) => (
                           <option key={prompt.id} value={prompt.id}>
                             Day {prompt.day_of_month} — {prompt.prompt_text}
                           </option>
