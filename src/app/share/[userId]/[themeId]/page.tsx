@@ -86,17 +86,21 @@ export default async function SharePage({
       .eq("cell_type", "image"),
     supabase
       .from("cells")
-      .select("id, image_path, thumbnail_path, image_width, image_height, created_at")
+      .select(
+        "id, image_path, thumbnail_path, image_width, image_height, created_at, theme_prompt_id"
+      )
       .eq("created_by", userId)
       .eq("theme_id", themeId)
       .eq("cell_type", "image")
       .order("created_at", { ascending: true }),
-    supabase.from("theme_prompts").select("day_of_month, prompt_text").eq("theme_id", themeId),
+    supabase.from("theme_prompts").select("id, day_of_month, prompt_text").eq("theme_id", themeId),
   ]);
 
   const promptByDay = new Map<number, string>();
+  const promptById = new Map<number, { day_of_month: number | null; prompt_text: string }>();
   for (const row of promptRows ?? []) {
-    promptByDay.set(row.day_of_month, row.prompt_text);
+    if (row.day_of_month != null) promptByDay.set(row.day_of_month, row.prompt_text);
+    promptById.set(row.id, { day_of_month: row.day_of_month, prompt_text: row.prompt_text });
   }
 
   const cells = cellRows ?? [];
@@ -118,14 +122,23 @@ export default async function SharePage({
 
   const sketches: ShareSketch[] = cells.map((cell) => {
     const dayOfMonth = new Date(cell.created_at).getUTCDate();
-    const promptText = promptByDay.get(dayOfMonth);
+    // Prefers whichever prompt the uploader explicitly picked (see
+    // AddCellModal's "Prompt" dropdown) over inferring one from the upload
+    // date — that prompt may be for a different day than this was uploaded.
+    const linked = cell.theme_prompt_id != null ? promptById.get(cell.theme_prompt_id) : null;
+    const promptText = linked?.prompt_text ?? promptByDay.get(dayOfMonth);
     const counts = reactionCounts.get(cell.id);
     return {
       id: cell.id,
       imageUrl: getPublicImageUrl(cell.thumbnail_path ?? cell.image_path ?? ""),
       width: cell.image_width,
       height: cell.image_height,
-      title: promptText ? `Day ${dayOfMonth} — ${promptText}` : `Day ${dayOfMonth}`,
+      title:
+        linked && linked.day_of_month == null
+          ? linked.prompt_text
+          : promptText
+            ? `Day ${dayOfMonth} — ${promptText}`
+            : `Day ${dayOfMonth}`,
       reaction: counts ? reactionSummaryFromCounts(counts) : null,
     };
   });

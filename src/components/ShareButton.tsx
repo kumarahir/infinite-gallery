@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getPublicImageUrl, type CellRow } from "@/lib/cells";
-import { fetchPromptForDay } from "@/lib/themePrompts";
+import { fetchPromptForCell } from "@/lib/themePrompts";
 
 function buildShareUrl(x: number, y: number): string {
   return `${window.location.origin}/?cell=${x},${y}`;
@@ -49,14 +49,18 @@ export default function ShareButton({ cell }: { cell: CellRow }) {
 
   useEffect(() => {
     if (cell.cell_type !== "image" || cell.theme_id == null) return;
-    // Whichever day was live when this was uploaded, not "today" — a share
+    // Prefers whichever prompt the uploader explicitly picked; falls back to
+    // whichever day was live when this was uploaded (not "today") — a share
     // of an old sketch should still credit the prompt it was actually made
     // for.
-    const dayOfMonth = new Date(cell.created_at).getUTCDate();
-    fetchPromptForDay(cell.theme_id, dayOfMonth)
+    fetchPromptForCell({
+      theme_id: cell.theme_id,
+      theme_prompt_id: cell.theme_prompt_id,
+      created_at: cell.created_at,
+    })
       .then((p) => setPromptText(p?.prompt_text ?? null))
       .catch(() => setPromptText(null));
-  }, [cell.cell_type, cell.theme_id, cell.created_at]);
+  }, [cell.cell_type, cell.theme_id, cell.theme_prompt_id, cell.created_at]);
 
   const text = buildShareText(cell, promptText);
 

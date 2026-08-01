@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/client";
 export interface ThemePrompt {
   id: number;
   theme_id: number;
-  day_of_month: number;
+  // Null for the "Generic" theme's freeform keyword-prompts, which aren't
+  // tied to a calendar day — see addGenericThemeKeywords below.
+  day_of_month: number | null;
   prompt_text: string;
   quote: string | null;
   simple_instruction: string | null;
@@ -169,4 +171,54 @@ export async function fetchPromptForDay(
     .maybeSingle();
   if (error) throw error;
   return (data as ThemePrompt) ?? null;
+}
+
+export async function fetchThemePromptById(id: number): Promise<ThemePrompt | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("theme_prompts")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ThemePrompt) ?? null;
+}
+
+// Prefers a sketch's explicitly-picked prompt (see cells.theme_prompt_id,
+// set when uploading to the default theme's prompt dropdown) over inferring
+// one from the upload date — older cells, and cells uploaded to a theme
+// with no prompt picker, fall back to the day-of-month match as before.
+export async function fetchPromptForCell(cell: {
+  theme_id: number | null;
+  theme_prompt_id: number | null;
+  created_at: string;
+}): Promise<ThemePrompt | null> {
+  if (cell.theme_prompt_id != null) {
+    const byId = await fetchThemePromptById(cell.theme_prompt_id);
+    if (byId) return byId;
+  }
+  if (cell.theme_id == null) return null;
+  const dayOfMonth = new Date(cell.created_at).getUTCDate();
+  return fetchPromptForDay(cell.theme_id, dayOfMonth);
+}
+
+// Lets any signed-in user grow the "Generic" theme's freeform keyword pool
+// while uploading — each keyword becomes its own day-less prompt row (see
+// theme_prompts_generic_insert in schema.sql, which only allows this for
+// the Generic theme specifically). Not attached to the sketch being
+// uploaded — these enrich the shared pool for the future, not this cell.
+export async function addGenericThemeKeywords(
+  themeId: number,
+  keywords: string[]
+): Promise<void> {
+  const trimmed = [...new Set(keywords.map((k) => k.trim()).filter(Boolean))];
+  if (trimmed.length === 0) return;
+  const supabase = createClient();
+  const rows = trimmed.map((prompt_text) => ({
+    theme_id: themeId,
+    day_of_month: null,
+    prompt_text,
+  }));
+  const { error } = await supabase.from("theme_prompts").insert(rows);
+  if (error) throw error;
 }

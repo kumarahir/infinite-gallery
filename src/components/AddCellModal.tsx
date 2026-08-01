@@ -17,7 +17,11 @@ import {
 import { fetchCanUpload, fetchMyStreak } from "@/lib/profiles";
 import { resizeImageWithThumbnail } from "@/lib/resizeImage";
 import { colorCorrectImage, cropImage, detectPaperCorners, type Corners } from "@/lib/scanDocument";
-import { fetchPromptForDay, type ThemePrompt } from "@/lib/themePrompts";
+import {
+  addGenericThemeKeywords,
+  fetchThemePrompts,
+  type ThemePrompt,
+} from "@/lib/themePrompts";
 import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
 
@@ -110,7 +114,20 @@ export default function AddCellModal({
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [themeId, setThemeId] = useState<number | null>(null);
-  const [todaysPrompt, setTodaysPrompt] = useState<ThemePrompt | null>(null);
+  // Only ever populated for the default theme (see the fetchThemes effect
+  // below) — backs both the "Prompt" dropdown and the quote/instructions
+  // card, which now shows whichever prompt is currently selected rather
+  // than always today's.
+  const [defaultThemePrompts, setDefaultThemePrompts] = useState<ThemePrompt[]>([]);
+  const [selectedPromptId, setSelectedPromptId] = useState<number | null>(null);
+  // Free-text keywords typed for the "Generic" theme — each becomes its own
+  // new prompt row for that theme on submit (see addGenericThemeKeywords),
+  // not attached to this particular sketch.
+  const [genericKeywords, setGenericKeywords] = useState("");
+
+  const defaultTheme = themes.find((t) => t.is_default) ?? null;
+  const genericTheme = themes.find((t) => t.name === "Generic") ?? null;
+  const selectedPrompt = defaultThemePrompts.find((p) => p.id === selectedPromptId) ?? null;
 
   useEffect(() => {
     if (!user || isAdmin) return;
@@ -143,16 +160,20 @@ export default function AddCellModal({
         const defaultTheme = list.find((t) => t.is_default);
         setThemeId(defaultTheme?.id ?? list[0]?.id ?? null);
         if (!defaultTheme) return;
-        // Tied to the default theme specifically, not whatever the user
-        // ends up picking in the theme dropdown below — switching that
-        // dropdown to browse other themes shouldn't change which prompt
-        // is shown as "today's".
-        const dayOfMonth = new Date(
-          new Date().toISOString().slice(0, 10) + "T00:00:00Z"
-        ).getUTCDate();
-        fetchPromptForDay(defaultTheme.id, dayOfMonth)
-          .then(setTodaysPrompt)
-          .catch(() => setTodaysPrompt(null));
+        // Fetched once regardless of which theme ends up selected in the
+        // dropdown below — the prompt picker/card only render while the
+        // default theme is actually selected, but there's no need to
+        // refetch every time the user switches back to it.
+        fetchThemePrompts(defaultTheme.id)
+          .then((prompts) => {
+            setDefaultThemePrompts(prompts);
+            const dayOfMonth = new Date(
+              new Date().toISOString().slice(0, 10) + "T00:00:00Z"
+            ).getUTCDate();
+            const today = prompts.find((p) => p.day_of_month === dayOfMonth);
+            setSelectedPromptId(today?.id ?? null);
+          })
+          .catch(() => setDefaultThemePrompts([]));
       })
       .catch(() => {
         // Leave themes empty — the submit button stays disabled in that case.
@@ -279,6 +300,11 @@ export default function AddCellModal({
           return;
         }
       }
+      if (genericTheme && themeId === genericTheme.id && genericKeywords.trim()) {
+        // Non-critical — grows the Generic theme's keyword pool for next
+        // time, but shouldn't block this sketch from uploading if it fails.
+        await addGenericThemeKeywords(genericTheme.id, genericKeywords.split(",")).catch(() => {});
+      }
       const { full, thumbnail } = await resizeImageWithThumbnail(blobToUpload);
       const cell = await insertImageCell({
         x,
@@ -289,6 +315,7 @@ export default function AddCellModal({
         thumbnailBlob: thumbnail.blob,
         userId: user.id,
         themeId,
+        themePromptId: defaultTheme && themeId === defaultTheme.id ? selectedPromptId : null,
       });
       const streak = await fetchMyStreak(user.id).catch(() => undefined);
       onCreated(cell, streak);
@@ -399,48 +426,49 @@ export default function AddCellModal({
             </div>
 
             {tab === "image" &&
-              todaysPrompt &&
+              themeId === defaultTheme?.id &&
+              selectedPrompt &&
               (imageStep === "adjusting" || imageStep === "cropped" ? (
                 // Compact form once the user is actively cropping/enhancing —
                 // full quote+instructions card already did its job on the
                 // picker screen, and this step is short on vertical room.
                 <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-sm font-semibold">
-                  {todaysPrompt.prompt_text}
+                  {selectedPrompt.prompt_text}
                 </span>
               ) : (
                 <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
                   <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
-                    Day {todaysPrompt.day_of_month}&rsquo;s prompt
+                    Day {selectedPrompt.day_of_month}&rsquo;s prompt
                   </p>
-                  <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
-                  {todaysPrompt.quote && (
+                  <p className="text-sm font-semibold">{selectedPrompt.prompt_text}</p>
+                  {selectedPrompt.quote && (
                     <p className="text-xs italic text-black/60 dark:text-white/60">
-                      &ldquo;{todaysPrompt.quote}&rdquo;
+                      &ldquo;{selectedPrompt.quote}&rdquo;
                     </p>
                   )}
                   <div className="flex flex-col gap-0.5 text-xs">
-                    {todaysPrompt.simple_instruction && (
+                    {selectedPrompt.simple_instruction && (
                       <p>
                         <span className="font-medium text-green-700 dark:text-green-400">
                           Simple —
                         </span>{" "}
-                        {todaysPrompt.simple_instruction}
+                        {selectedPrompt.simple_instruction}
                       </p>
                     )}
-                    {todaysPrompt.medium_instruction && (
+                    {selectedPrompt.medium_instruction && (
                       <p>
                         <span className="font-medium text-amber-700 dark:text-amber-400">
                           Medium —
                         </span>{" "}
-                        {todaysPrompt.medium_instruction}
+                        {selectedPrompt.medium_instruction}
                       </p>
                     )}
-                    {todaysPrompt.stretch_instruction && (
+                    {selectedPrompt.stretch_instruction && (
                       <p>
                         <span className="font-medium text-red-700 dark:text-red-400">
                           Stretch —
                         </span>{" "}
-                        {todaysPrompt.stretch_instruction}
+                        {selectedPrompt.stretch_instruction}
                       </p>
                     )}
                   </div>
@@ -578,6 +606,43 @@ export default function AddCellModal({
                       ))}
                     </select>
                   </label>
+
+                  {themeId === defaultTheme?.id && defaultThemePrompts.length > 0 && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                        Prompt
+                      </span>
+                      <select
+                        value={selectedPromptId ?? ""}
+                        onChange={(e) =>
+                          setSelectedPromptId(e.target.value ? Number(e.target.value) : null)
+                        }
+                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                      >
+                        <option value="">No specific prompt</option>
+                        {defaultThemePrompts.map((prompt) => (
+                          <option key={prompt.id} value={prompt.id}>
+                            Day {prompt.day_of_month} — {prompt.prompt_text}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {themeId === genericTheme?.id && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                        Add keywords (comma separated)
+                      </span>
+                      <input
+                        type="text"
+                        value={genericKeywords}
+                        onChange={(e) => setGenericKeywords(e.target.value)}
+                        placeholder="sunset, ocean, calm"
+                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                      />
+                    </label>
+                  )}
 
                   {error && <p className="text-sm text-red-500">{error}</p>}
                   <button

@@ -42,7 +42,7 @@ const BLANK_DRAFT: PromptFormDraft = {
 
 function draftFromPrompt(p: ThemePrompt): PromptFormDraft {
   return {
-    day_of_month: String(p.day_of_month),
+    day_of_month: p.day_of_month != null ? String(p.day_of_month) : "",
     prompt_text: p.prompt_text,
     quote: p.quote ?? "",
     simple_instruction: p.simple_instruction ?? "",
@@ -390,7 +390,9 @@ export default function AdminPromptsPanel() {
                   key={p.id}
                   className="flex flex-col gap-2 rounded-lg border border-black/10 dark:border-white/15 p-3"
                 >
-                  <p className="text-sm font-medium">Edit Day {p.day_of_month}</p>
+                  <p className="text-sm font-medium">
+                    {p.day_of_month != null ? `Edit Day ${p.day_of_month}` : "Edit keyword"}
+                  </p>
                   {renderFormFields(false)}
                 </li>
               ) : (
@@ -400,7 +402,7 @@ export default function AdminPromptsPanel() {
                   className="flex items-center justify-between gap-3 rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 >
                   <span className="text-sm">
-                    Day {p.day_of_month} — {p.prompt_text}
+                    {p.day_of_month != null ? `Day ${p.day_of_month} — ${p.prompt_text}` : p.prompt_text}
                   </span>
                   <div className="flex items-center gap-3 shrink-0">
                     <button

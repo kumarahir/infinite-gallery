@@ -776,3 +776,30 @@ end;
 $$;
 
 grant execute on function public.mark_weekly_review_sent(text, uuid[]) to anon, authenticated;
+
+-- v2.9: let an uploader either pick one of the default theme's existing
+-- day-based prompts (stored against the cell, since it may not match the
+-- day it was actually uploaded on) or, for the "Generic" theme specifically,
+-- contribute new freeform keyword-prompts to that theme's pool. Generic's
+-- keyword-prompts have no day_of_month (they aren't tied to a calendar day),
+-- so the column becomes nullable — the existing check constraint already
+-- passes on null, and the existing unique(theme_id, day_of_month) constraint
+-- still allows any number of null-day rows per theme (nulls are never equal
+-- to each other under a standard unique constraint).
+alter table public.theme_prompts alter column day_of_month drop not null;
+
+alter table public.cells
+  add column theme_prompt_id bigint references public.theme_prompts(id) on delete set null;
+
+-- Scoped narrowly so this doesn't widen the admin-only dated-prompt policy
+-- above: only the theme literally named "Generic", and only day-less rows.
+create policy "theme_prompts_generic_insert"
+  on public.theme_prompts for insert
+  to authenticated
+  with check (
+    day_of_month is null
+    and exists (
+      select 1 from public.themes t
+      where t.id = theme_id and t.name = 'Generic'
+    )
+  );

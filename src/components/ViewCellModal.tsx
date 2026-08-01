@@ -6,7 +6,7 @@ import type { User } from "@supabase/supabase-js";
 import { deleteCell, getPublicImageUrl, type CellRow } from "@/lib/cells";
 import { fetchPublicProfile, type PublicProfile } from "@/lib/profiles";
 import { type ReactionSummary } from "@/lib/reactions";
-import { fetchPromptForDay } from "@/lib/themePrompts";
+import { fetchPromptForCell } from "@/lib/themePrompts";
 import ShareButton from "./ShareButton";
 import SocialLinks from "./SocialLinks";
 import ReactionPicker from "./ReactionPicker";
@@ -41,14 +41,18 @@ export default function ViewCellModal({
 
   useEffect(() => {
     if (cell.cell_type !== "image" || cell.theme_id == null) return;
-    // Whichever day was live when this was uploaded, not "today" — matches
-    // the same lookup ShareButton uses so the credited prompt is always
-    // the one this sketch was actually made for.
-    const dayOfMonth = new Date(cell.created_at).getUTCDate();
-    fetchPromptForDay(cell.theme_id, dayOfMonth)
+    // Prefers whichever prompt the uploader explicitly picked; falls back to
+    // whichever day was live when this was uploaded (not "today") — matches
+    // the same lookup ShareButton uses so the credited prompt is always the
+    // one this sketch was actually made for.
+    fetchPromptForCell({
+      theme_id: cell.theme_id,
+      theme_prompt_id: cell.theme_prompt_id,
+      created_at: cell.created_at,
+    })
       .then((p) => setPromptText(p?.prompt_text ?? null))
       .catch(() => setPromptText(null));
-  }, [cell.cell_type, cell.theme_id, cell.created_at]);
+  }, [cell.cell_type, cell.theme_id, cell.theme_prompt_id, cell.created_at]);
 
   useEffect(() => {
     if (cell.cell_type !== "image") return;

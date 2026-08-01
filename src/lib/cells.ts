@@ -18,6 +18,12 @@ export interface CellRow {
   created_by_name: string | null;
   created_at: string;
   theme_id: number | null;
+  // Set when the uploader picked a specific prompt from the default theme's
+  // dropdown (see AddCellModal) — lets consumers show that exact prompt
+  // instead of inferring one from the upload date. Null for the "Generic"
+  // theme (its keyword-prompts aren't tied to individual sketches) and for
+  // cells uploaded before this existed.
+  theme_prompt_id: number | null;
   themes: { name: string } | null;
 }
 
@@ -331,6 +337,7 @@ async function insertCell(row: {
   image_width?: number;
   image_height?: number;
   theme_id?: number | null;
+  theme_prompt_id?: number | null;
   created_by: string;
 }): Promise<CellRow> {
   const supabase = createClient();
@@ -380,8 +387,9 @@ export async function insertImageCell(params: {
   thumbnailBlob: Blob;
   userId: string;
   themeId: number | null;
+  themePromptId?: number | null;
 }): Promise<CellRow> {
-  const { x, y, blob, width, height, thumbnailBlob, userId, themeId } = params;
+  const { x, y, blob, width, height, thumbnailBlob, userId, themeId, themePromptId } = params;
   const supabase = createClient();
   const path = `${userId}/${nanoid()}.webp`;
   const thumbnailPath = `${userId}/${nanoid()}-thumb.webp`;
@@ -409,6 +417,7 @@ export async function insertImageCell(params: {
       image_width: width,
       image_height: height,
       theme_id: themeId,
+      theme_prompt_id: themePromptId ?? null,
       created_by: userId,
     });
   } catch (err) {
