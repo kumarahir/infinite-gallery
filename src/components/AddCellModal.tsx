@@ -20,6 +20,7 @@ import { colorCorrectImage, cropImage, detectPaperCorners, type Corners } from "
 import {
   addGenericThemeKeywords,
   fetchThemePrompts,
+  stripQuoteMarks,
   type ThemePrompt,
 } from "@/lib/themePrompts";
 import CropAdjuster from "./CropAdjuster";
@@ -385,24 +386,19 @@ export default function AddCellModal({
     }
   };
 
-  // Shared between the transient scanning/cropping/adjusting steps (shown
-  // near the top, unchanged position) and the picker/cropped steps (shown
-  // further down, after the theme/prompt pickers — see the render tree
-  // below) so the two spots can't drift out of sync with each other.
-  const promptCard = selectedPrompt && (
-    imageStep === "adjusting" || imageStep === "cropped" ? (
-      // Compact form once the user is actively cropping/enhancing — full
-      // quote+instructions card already did its job on the picker screen,
-      // and this step is short on vertical room.
-      <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-sm font-semibold">
-        {selectedPrompt.prompt_text}
-      </span>
-    ) : (
+  // Shared between the transient scanning/cropping steps (shown near the
+  // top, unchanged position) and the picker step (shown further down, after
+  // the theme/prompt pickers — see the render tree below) so the two spots
+  // can't drift out of sync with each other. Hidden entirely during
+  // adjusting/cropped — the "Prompt" dropdown already names the day's
+  // prompt there, so a second copy would just repeat it.
+  const promptCard =
+    selectedPrompt && imageStep !== "adjusting" && imageStep !== "cropped" ? (
       <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
         <p className="text-sm font-semibold">{selectedPrompt.prompt_text}</p>
         {selectedPrompt.quote && (
           <p className="text-xs italic text-black/60 dark:text-white/60">
-            &ldquo;{selectedPrompt.quote}&rdquo;
+            &ldquo;{stripQuoteMarks(selectedPrompt.quote)}&rdquo;
           </p>
         )}
         <div className="flex flex-col gap-0.5 text-xs">
@@ -426,8 +422,7 @@ export default function AddCellModal({
           )}
         </div>
       </div>
-    )
-  );
+    ) : null;
 
   return (
     <div

@@ -12,7 +12,7 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { fetchConsistentArtists, fetchMyProfile, type ConsistentArtist } from "@/lib/profiles";
-import { fetchPromptForDay, type ThemePrompt } from "@/lib/themePrompts";
+import { fetchPromptForDay, stripQuoteMarks, type ThemePrompt } from "@/lib/themePrompts";
 
 function Thumb({ cell, size }: { cell: CellRow; size: number }) {
   const path = cell.thumbnail_path ?? cell.image_path;
@@ -173,7 +173,7 @@ export default function LandingOverlay({
             <p className="text-sm font-semibold">{todaysPrompt.prompt_text}</p>
             {todaysPrompt.quote && (
               <p className="text-xs italic text-black/60 dark:text-white/60 mt-1">
-                &ldquo;{todaysPrompt.quote}&rdquo;
+                &ldquo;{stripQuoteMarks(todaysPrompt.quote)}&rdquo;
               </p>
             )}
             <div className="flex flex-col gap-0.5 mt-2 text-xs">

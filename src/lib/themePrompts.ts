@@ -22,6 +22,13 @@ export interface ParsedThemePrompt {
   stretch_instruction: string | null;
 }
 
+// Some quotes were pasted/typed with their own straight or curly quote
+// marks already wrapped around them — stripped here so callers can wrap the
+// result in their own “” without ending up with doubled-up quote marks.
+export function stripQuoteMarks(quote: string): string {
+  return quote.trim().replace(/^["“”]+|["“”]+$/g, "");
+}
+
 // Separator between the label and its text — accepts a plain hyphen as
 // well as en dash/em dash, since pasting from Word/Docs/Notes commonly
 // autocorrects "word - word" into an en dash.

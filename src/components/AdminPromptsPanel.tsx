@@ -7,6 +7,7 @@ import {
   deleteThemePrompt,
   fetchThemePrompts,
   parseThemePromptsText,
+  stripQuoteMarks,
   updateThemePrompt,
   upsertThemePrompts,
   type ParsedThemePrompt,
@@ -340,7 +341,11 @@ export default function AdminPromptsPanel() {
             {preview.map((p) => (
               <li key={p.day_of_month} className="text-xs border-t border-black/5 dark:border-white/10 pt-2 first:border-0 first:pt-0">
                 <span className="font-semibold">Day {p.day_of_month} — {p.prompt_text}</span>
-                {p.quote && <p className="italic text-black/60 dark:text-white/60">&ldquo;{p.quote}&rdquo;</p>}
+                {p.quote && (
+                  <p className="italic text-black/60 dark:text-white/60">
+                    &ldquo;{stripQuoteMarks(p.quote)}&rdquo;
+                  </p>
+                )}
                 {p.simple_instruction && <p>Simple — {p.simple_instruction}</p>}
                 {p.medium_instruction && <p>Medium — {p.medium_instruction}</p>}
                 {p.stretch_instruction && <p>Stretch — {p.stretch_instruction}</p>}
