@@ -385,6 +385,50 @@ export default function AddCellModal({
     }
   };
 
+  // Shared between the transient scanning/cropping/adjusting steps (shown
+  // near the top, unchanged position) and the picker/cropped steps (shown
+  // further down, after the theme/prompt pickers — see the render tree
+  // below) so the two spots can't drift out of sync with each other.
+  const promptCard = selectedPrompt && (
+    imageStep === "adjusting" || imageStep === "cropped" ? (
+      // Compact form once the user is actively cropping/enhancing — full
+      // quote+instructions card already did its job on the picker screen,
+      // and this step is short on vertical room.
+      <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-sm font-semibold">
+        {selectedPrompt.prompt_text}
+      </span>
+    ) : (
+      <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
+        <p className="text-sm font-semibold">{selectedPrompt.prompt_text}</p>
+        {selectedPrompt.quote && (
+          <p className="text-xs italic text-black/60 dark:text-white/60">
+            &ldquo;{selectedPrompt.quote}&rdquo;
+          </p>
+        )}
+        <div className="flex flex-col gap-0.5 text-xs">
+          {selectedPrompt.simple_instruction && (
+            <p>
+              <span className="font-medium text-green-700 dark:text-green-400">Simple —</span>{" "}
+              {selectedPrompt.simple_instruction}
+            </p>
+          )}
+          {selectedPrompt.medium_instruction && (
+            <p>
+              <span className="font-medium text-amber-700 dark:text-amber-400">Medium —</span>{" "}
+              {selectedPrompt.medium_instruction}
+            </p>
+          )}
+          {selectedPrompt.stretch_instruction && (
+            <p>
+              <span className="font-medium text-red-700 dark:text-red-400">Stretch —</span>{" "}
+              {selectedPrompt.stretch_instruction}
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  );
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
@@ -394,19 +438,14 @@ export default function AddCellModal({
         className="w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-xl bg-background border border-black/10 dark:border-white/15 shadow-xl p-5 flex flex-col gap-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-black/50 dark:text-white/50">
-            Add sketch to this cell
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-black/40 dark:text-white/40 hover:opacity-70"
-          >
-            ×
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="self-end text-black/40 dark:text-white/40 hover:opacity-70"
+        >
+          ×
+        </button>
 
         {taken ? (
           <p className="text-sm text-black/70 dark:text-white/70">
@@ -450,53 +489,9 @@ export default function AddCellModal({
             </div>
 
             {tab === "image" &&
-              selectedPrompt &&
-              (imageStep === "adjusting" || imageStep === "cropped" ? (
-                // Compact form once the user is actively cropping/enhancing —
-                // full quote+instructions card already did its job on the
-                // picker screen, and this step is short on vertical room.
-                <span className="self-center rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-sm font-semibold">
-                  {selectedPrompt.prompt_text}
-                </span>
-              ) : (
-                <div className="rounded-lg border border-black/10 dark:border-white/15 px-3 py-2 flex flex-col gap-1">
-                  <p className="text-[11px] uppercase tracking-wide text-black/40 dark:text-white/40">
-                    Day {selectedPrompt.day_of_month}&rsquo;s prompt
-                  </p>
-                  <p className="text-sm font-semibold">{selectedPrompt.prompt_text}</p>
-                  {selectedPrompt.quote && (
-                    <p className="text-xs italic text-black/60 dark:text-white/60">
-                      &ldquo;{selectedPrompt.quote}&rdquo;
-                    </p>
-                  )}
-                  <div className="flex flex-col gap-0.5 text-xs">
-                    {selectedPrompt.simple_instruction && (
-                      <p>
-                        <span className="font-medium text-green-700 dark:text-green-400">
-                          Simple —
-                        </span>{" "}
-                        {selectedPrompt.simple_instruction}
-                      </p>
-                    )}
-                    {selectedPrompt.medium_instruction && (
-                      <p>
-                        <span className="font-medium text-amber-700 dark:text-amber-400">
-                          Medium —
-                        </span>{" "}
-                        {selectedPrompt.medium_instruction}
-                      </p>
-                    )}
-                    {selectedPrompt.stretch_instruction && (
-                      <p>
-                        <span className="font-medium text-red-700 dark:text-red-400">
-                          Stretch —
-                        </span>{" "}
-                        {selectedPrompt.stretch_instruction}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
+              imageStep !== "picker" &&
+              imageStep !== "cropped" &&
+              promptCard}
 
             {tab === "image" ? (
               limitReached ? (
@@ -529,6 +524,62 @@ export default function AddCellModal({
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                      Theme
+                    </span>
+                    <select
+                      value={themeId ?? ""}
+                      onChange={(e) => setThemeId(Number(e.target.value))}
+                      className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                    >
+                      {themes.map((theme) => (
+                        <option key={theme.id} value={theme.id}>
+                          {theme.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {selectedThemePrompts.length > 0 && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                        Prompt
+                      </span>
+                      <select
+                        value={selectedPromptId ?? ""}
+                        onChange={(e) =>
+                          setSelectedPromptId(e.target.value ? Number(e.target.value) : null)
+                        }
+                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                      >
+                        <option value="">No specific prompt</option>
+                        {selectedThemePrompts.map((prompt) => (
+                          <option key={prompt.id} value={prompt.id}>
+                            Day {prompt.day_of_month} — {prompt.prompt_text}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {themeId === genericTheme?.id && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
+                        Add keywords (comma separated)
+                      </span>
+                      <input
+                        type="text"
+                        value={genericKeywords}
+                        onChange={(e) => setGenericKeywords(e.target.value)}
+                        placeholder="sunset, ocean, calm"
+                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
+                      />
+                    </label>
+                  )}
+
+                  {promptCard}
+
                   {imageStep === "cropped" && croppedPreviewUrl ? (
                     <div className="flex flex-col gap-2">
                       <div className="relative">
@@ -609,60 +660,6 @@ export default function AddCellModal({
                         accept="image/*"
                         className="hidden"
                         onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                  )}
-
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-black/50 dark:text-white/50">
-                      Theme
-                    </span>
-                    <select
-                      value={themeId ?? ""}
-                      onChange={(e) => setThemeId(Number(e.target.value))}
-                      className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-                    >
-                      {themes.map((theme) => (
-                        <option key={theme.id} value={theme.id}>
-                          {theme.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {selectedThemePrompts.length > 0 && (
-                    <label className="flex flex-col gap-1">
-                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
-                        Prompt
-                      </span>
-                      <select
-                        value={selectedPromptId ?? ""}
-                        onChange={(e) =>
-                          setSelectedPromptId(e.target.value ? Number(e.target.value) : null)
-                        }
-                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-                      >
-                        <option value="">No specific prompt</option>
-                        {selectedThemePrompts.map((prompt) => (
-                          <option key={prompt.id} value={prompt.id}>
-                            Day {prompt.day_of_month} — {prompt.prompt_text}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-
-                  {themeId === genericTheme?.id && (
-                    <label className="flex flex-col gap-1">
-                      <span className="text-xs font-medium text-black/50 dark:text-white/50">
-                        Add keywords (comma separated)
-                      </span>
-                      <input
-                        type="text"
-                        value={genericKeywords}
-                        onChange={(e) => setGenericKeywords(e.target.value)}
-                        placeholder="sunset, ocean, calm"
-                        className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
                       />
                     </label>
                   )}
