@@ -10,6 +10,7 @@ import AboutModal from "./AboutModal";
 import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
 import FilterBar from "./FilterBar";
 import MineToggleButton from "./MineToggleButton";
+import GalleryModeToggle, { type GalleryMode } from "./GalleryModeToggle";
 import LandingOverlay from "./LandingOverlay";
 import MobileToolsDrawer from "./MobileToolsDrawer";
 import { useCellChunks } from "@/hooks/useCellChunks";
@@ -40,6 +41,7 @@ import {
   type Theme,
 } from "@/lib/cells";
 import { buildCollage, collageFilename } from "@/lib/collage";
+import { getOrCreatePersonalShareToken } from "@/lib/personalShares";
 import {
   fetchAllReactionSummaries,
   fetchReactionBreakdownByCellIds,
@@ -76,6 +78,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     y: number;
     total: number | null;
     streak: number | null;
+    publishError: string | null;
   } | null>(null);
   const [dotCoords, setDotCoords] = useState<CellCoord[]>([]);
   const [radarVisible, setRadarVisible] = useState(false);
@@ -122,6 +125,14 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [filteredCells, setFilteredCells] = useState<CellRow[]>([]);
   const filterActive = onlyMine || themeFilterId != null;
   const wasFilterActive = useRef(false);
+
+  // Which (x,y) plane is currently being browsed — the shared community
+  // canvas, or this signed-in user's own private one. Always "community"
+  // for logged-out visitors (the toggle itself only renders when `user` is
+  // set). `personalOwnerId` is the single value threaded through every
+  // scope-aware fetch below — undefined selects the community plane.
+  const [galleryMode, setGalleryMode] = useState<GalleryMode>("community");
+  const personalOwnerId = galleryMode === "personal" && user ? user.id : undefined;
 
   const dragState = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: 0 });
   const lastSample = useRef({ x: 0, y: 0, t: 0 });
@@ -186,7 +197,8 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     [paintTransform, scheduleStateSync]
   );
 
-  const { ensureRange, getCell, addLocalCell, removeLocalCell, version } = useCellChunks();
+  const { ensureRange, getCell, addLocalCell, removeLocalCell, version } =
+    useCellChunks(personalOwnerId);
 
   const stopAnimation = useCallback(() => {
     if (rafId.current != null) {
@@ -251,15 +263,17 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
   useEffect(() => stopAnimation, [stopAnimation]);
 
-  // Fetched once for the mobile minimap radar — kept in sync afterward via
-  // handleCellCreated/handleCellDeleted rather than re-queried.
+  // Fetched for the minimap radar — kept in sync afterward via
+  // handleCellCreated/handleCellDeleted rather than re-queried, except when
+  // the gallery plane itself changes, which needs a fresh fetch scoped to
+  // the newly-selected plane.
   useEffect(() => {
-    fetchAllImageCoords()
+    fetchAllImageCoords(personalOwnerId)
       .then(setDotCoords)
       .catch(() => {
         // Radar just shows no dots if this fails — not worth surfacing an error for.
       });
-  }, []);
+  }, [personalOwnerId]);
 
   // Seeds the grid's reaction badges on load; individual cells are kept
   // live afterward via handleReactionSummaryChange, not by re-running this.
@@ -286,18 +300,20 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       setFilteredCells([]);
       return;
     }
-    fetchFilteredCells({ onlyMine, themeId: themeFilterId }, user?.id)
+    fetchFilteredCells({ onlyMine, themeId: themeFilterId }, user?.id, personalOwnerId)
       .then(setFilteredCells)
       .catch(() => setFilteredCells([]));
-  }, [filterActive, onlyMine, themeFilterId, user?.id]);
+  }, [filterActive, onlyMine, themeFilterId, user?.id, personalOwnerId]);
 
-  // Collage download — only offered for the "my sketches within a theme"
-  // combination (both onlyMine and themeFilterId set), so every collage has
-  // a coherent scope: one person, one theme. onlyMine alone would be
-  // unbounded (every sketch this user has ever made); themeFilterId alone
-  // wouldn't be personal (everyone's sketches in that theme).
+  // Collage download — needs a coherent scope: one person, one theme. In
+  // community mode that means both onlyMine and themeFilterId set (onlyMine
+  // alone would be unbounded — every sketch this user has ever made;
+  // themeFilterId alone wouldn't be personal — everyone's sketches in that
+  // theme). In personal mode everything already belongs to this user, so
+  // onlyMine (hidden there anyway) doesn't need to be true too.
   const [downloadingCollage, setDownloadingCollage] = useState(false);
-  const collageReady = !!user && onlyMine && themeFilterId != null;
+  const collageReady =
+    !!user && themeFilterId != null && (galleryMode === "community" ? onlyMine : true);
 
   const handleDownloadCollage = useCallback(async () => {
     if (!collageReady || filteredCells.length === 0 || downloadingCollage) return;
@@ -373,16 +389,33 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, [collageReady, filteredCells, downloadingCollage, themes, themeFilterId]);
 
   // Shares a public, no-login-required page listing every sketch this user
-  // has made for this theme (same collageReady scope as the collage) —
-  // /share/[userId]/[themeId], which reads through RLS policies that are
-  // already public (cells, cell_reactions, theme_prompts, themes) plus the
-  // get_public_profile RPC, so it needs no new schema or auth exposure.
+  // has made for this theme (same collageReady scope as the collage).
+  // Community: /share/[userId]/[themeId], reading through RLS policies
+  // that are already public (cells, cell_reactions, theme_prompts, themes)
+  // plus the get_public_profile RPC. Personal: /share/personal/[token] —
+  // personal cells aren't publicly selectable, so this goes through
+  // get_or_create_personal_share instead of exposing the raw userId/themeId
+  // (see schema.sql's v3.0 section for why: theme_id is a small guessable
+  // int, so a raw-id link would let anyone enumerate this user's other
+  // personal themes with no way to revoke a leak).
   const [shareLinkCopied, setShareLinkCopied] = useState(false);
   const handleShareCollectionLink = useCallback(async () => {
     if (!collageReady || !user || themeFilterId == null) return;
     const theme = themes.find((t) => t.id === themeFilterId);
-    const url = `${window.location.origin}/share/${user.id}/${themeFilterId}`;
     const text = theme ? `Check out my ${theme.name} sketches` : "Check out my sketches";
+
+    let url: string;
+    if (galleryMode === "personal") {
+      try {
+        const token = await getOrCreatePersonalShareToken(themeFilterId);
+        url = `${window.location.origin}/share/personal/${token}`;
+      } catch (err) {
+        console.error("Failed to create personal share link", err);
+        return;
+      }
+    } else {
+      url = `${window.location.origin}/share/${user.id}/${themeFilterId}`;
+    }
 
     if (navigator.share) {
       try {
@@ -396,7 +429,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     await navigator.clipboard.writeText(url);
     setShareLinkCopied(true);
     setTimeout(() => setShareLinkCopied(false), 2000);
-  }, [collageReady, user, themeFilterId, themes]);
+  }, [collageReady, user, themeFilterId, themes, galleryMode]);
 
   // Deep-link support: /?cell=x,y auto-opens that cell and centers the grid
   // on it. Parsed once on mount (and stripped from the URL immediately);
@@ -553,15 +586,28 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   }, [range, getActiveCell, version]);
 
   const handleCellCreated = useCallback(
-    (cell: CellRow, streak?: number) => {
+    (cell: CellRow, streak?: number, publishError?: string) => {
       addLocalCell(cell);
       if (cell.cell_type !== "image") return;
       setDotCoords((prev) => [...prev, { x: cell.x, y: cell.y, created_by: cell.created_by }]);
       // Show the thank-you banner immediately (count fills in once known) —
       // the ViewCellModal that's about to render for this cell reads it.
       // The streak is already known at this point (AddCellModal fetched it
-      // right after the insert), unlike the total count below.
-      setCelebration({ x: cell.x, y: cell.y, total: null, streak: streak ?? null });
+      // right after the insert), unlike the total count below. publishError
+      // (from a failed "also publish to community" attempt) is already
+      // fully resolved by the time AddCellModal calls this.
+      setCelebration({
+        x: cell.x,
+        y: cell.y,
+        total: null,
+        streak: streak ?? null,
+        publishError: publishError ?? null,
+      });
+      // fetchTotalImageCount is community-only — showing that count after a
+      // personal-gallery upload would be misleading (it didn't change), so
+      // the banner just skips the "to make it total of X" clause there and
+      // leaves total permanently null.
+      if (cell.personal_owner_id != null) return;
       fetchTotalImageCount()
         .then((total) => setCelebration((prev) => (prev ? { ...prev, total } : prev)))
         .catch(() => {
@@ -629,6 +675,49 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       y: usableHeight / 2 - cellSize / 2,
     });
   }, [animateTranslateTo, isTouchPrimary, cellSize]);
+
+  // Recenters whenever the gallery-mode toggle actually changes (not on
+  // mount — wasGalleryMode starts equal to the initial value, so this only
+  // fires on a real switch) — community and personal are unrelated
+  // coordinate spaces, so wherever the view happened to be panned to in one
+  // plane means nothing in the other. Mirrors the "open centered on your
+  // last upload, else origin" logic the mount effect above already has,
+  // just re-triggerable instead of once-only, and reset to the newly
+  // active plane's own last cell rather than the community one.
+  const wasGalleryMode = useRef(galleryMode);
+  useEffect(() => {
+    if (wasGalleryMode.current === galleryMode) return;
+    wasGalleryMode.current = galleryMode;
+    setOnlyMine(false);
+    setThemeFilterId(null);
+    if (!user || !containerRef.current) {
+      handleRecenter();
+      return;
+    }
+    fetchLastImageCellByUser(user.id, personalOwnerId).then((coord) => {
+      if (!coord || !containerRef.current) {
+        handleRecenter();
+        return;
+      }
+      const { x, y } = coord;
+      const usableHeight = isTouchPrimary
+        ? containerRef.current.clientHeight - MOBILE_CONTROLS_HEIGHT
+        : containerRef.current.clientHeight;
+      animateTranslateTo({
+        x: containerRef.current.clientWidth / 2 - x * cellStep - cellSize / 2,
+        y: usableHeight / 2 - y * cellStep - cellSize / 2,
+      });
+    });
+  }, [
+    galleryMode,
+    user,
+    personalOwnerId,
+    isTouchPrimary,
+    cellStep,
+    cellSize,
+    handleRecenter,
+    animateTranslateTo,
+  ]);
 
   // Landing overlay's "shuffle" action — teleports to a random existing
   // sketch, reusing the same off-screen-controls-aware centering math as
@@ -873,6 +962,12 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           <MobileToolsDrawer open={toolsOpen}>
             <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
             {user && (
+              <GalleryModeToggle
+                mode={galleryMode}
+                onToggle={() => setGalleryMode((m) => (m === "community" ? "personal" : "community"))}
+              />
+            )}
+            {user && galleryMode === "community" && (
               <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
             )}
             {collageReady && (
@@ -1021,6 +1116,12 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           </button>
           <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
           {user && (
+            <GalleryModeToggle
+              mode={galleryMode}
+              onToggle={() => setGalleryMode((m) => (m === "community" ? "personal" : "community"))}
+            />
+          )}
+          {user && galleryMode === "community" && (
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
           )}
           {collageReady && (
@@ -1168,6 +1269,11 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
                 ? celebration.streak
                 : undefined
             }
+            celebratePublishError={
+              celebration && celebration.x === pendingCell.x && celebration.y === pendingCell.y
+                ? celebration.publishError
+                : undefined
+            }
             onClose={closeModal}
             onDeleted={handleCellDeleted}
             onReactionChange={handleReactionSummaryChange}
@@ -1178,6 +1284,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             y={pendingCell.y}
             user={user}
             isAdmin={isAdmin}
+            galleryMode={galleryMode}
             onClose={closeModal}
             onCreated={handleCellCreated}
           />

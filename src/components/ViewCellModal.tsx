@@ -17,6 +17,7 @@ export default function ViewCellModal({
   isAdmin,
   celebrateTotal,
   celebrateStreak,
+  celebratePublishError,
   onClose,
   onDeleted,
   onReactionChange,
@@ -26,12 +27,21 @@ export default function ViewCellModal({
   isAdmin: boolean;
   celebrateTotal?: number | null;
   celebrateStreak?: number | null;
+  // Set when this cell was just created via "also publish to community
+  // gallery" and that publish step failed (the personal upload itself
+  // still succeeded either way).
+  celebratePublishError?: string | null;
   onClose: () => void;
   onDeleted: (x: number, y: number) => void;
   // Lets the grid update this cell's reaction badge immediately instead of
   // waiting for the next full page load's bulk fetch to catch up.
   onReactionChange?: (cellId: number, summary: ReactionSummary | null) => void;
 }) {
+  // Community cells: only admins may remove (today's existing behavior).
+  // Personal cells: only their owner may — admins have no access at all to
+  // personal galleries, and there's no other route to deleting one.
+  const canDelete =
+    cell.personal_owner_id == null ? isAdmin : cell.personal_owner_id === user?.id;
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +109,12 @@ export default function ViewCellModal({
           </p>
         )}
 
+        {celebratePublishError && (
+          <p className="text-sm font-medium text-center text-red-600 dark:text-red-400">
+            {celebratePublishError}
+          </p>
+        )}
+
         {cell.cell_type === "image" && promptText && (
           <h2 className="text-center text-lg font-semibold -mb-2">{promptText}</h2>
         )}
@@ -147,20 +163,26 @@ export default function ViewCellModal({
           </div>
         )}
 
-        {cell.cell_type === "image" && (
+        {cell.cell_type === "image" && cell.personal_owner_id == null && (
           <ReactionPicker cellId={cell.id} user={user} onReactionChange={onReactionChange} />
         )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         <div className="flex items-center justify-between gap-3">
-          <ShareButton cell={cell} />
+          {/* ShareButton builds a /?cell=x,y deep link, which only ever
+              resolves against the community plane — meaningless (and would
+              point at the wrong, unrelated coordinate) for a personal cell,
+              which is private anyway. */}
+          {cell.personal_owner_id == null && <ShareButton cell={cell} />}
 
-          {isAdmin && (
+          {canDelete && (
             <div className="flex items-center gap-2">
               {confirmingRemove ? (
                 <>
-                  <span className="text-xs text-black/50 dark:text-white/50">Remove for everyone?</span>
+                  <span className="text-xs text-black/50 dark:text-white/50">
+                    {cell.personal_owner_id == null ? "Remove for everyone?" : "Delete this sketch?"}
+                  </span>
                   <button
                     type="button"
                     onClick={remove}

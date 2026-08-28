@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchCellsInRange, type CellRow } from "@/lib/cells";
 import { CHUNK_SIZE } from "@/lib/gridConstants";
 
@@ -12,11 +12,23 @@ function chunkKey(cx: number, cy: number) {
 // re-panning into an already-visited region never re-fetches. Cache and
 // in-flight tracking live in refs (not state) since they're mutated outside
 // the render cycle; `version` is bumped to force consumers to re-read them.
-export function useCellChunks() {
+//
+// `personalOwnerId` selects which (x,y) plane this cache backs — omitted
+// for the shared community plane, a uuid for that user's personal plane.
+// Changing it invalidates the whole cache: chunks fetched for one plane are
+// meaningless (and would show the wrong content) once panning switches to
+// the other, unrelated coordinate space.
+export function useCellChunks(personalOwnerId?: string | null) {
   const cache = useRef(new Map<string, CellRow[]>());
   const inFlight = useRef(new Set<string>());
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+
+  useEffect(() => {
+    cache.current.clear();
+    inFlight.current.clear();
+    bump();
+  }, [personalOwnerId, bump]);
 
   const ensureRange = useCallback(
     (minX: number, maxX: number, minY: number, maxY: number) => {
@@ -34,7 +46,8 @@ export function useCellChunks() {
             cx * CHUNK_SIZE,
             (cx + 1) * CHUNK_SIZE,
             cy * CHUNK_SIZE,
-            (cy + 1) * CHUNK_SIZE
+            (cy + 1) * CHUNK_SIZE,
+            personalOwnerId
           )
             .then((rows) => {
               cache.current.set(key, rows);
@@ -49,7 +62,7 @@ export function useCellChunks() {
         }
       }
     },
-    [bump]
+    [bump, personalOwnerId]
   );
 
   const getCell = useCallback((x: number, y: number): CellRow | undefined => {

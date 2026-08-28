@@ -803,3 +803,233 @@ create policy "theme_prompts_generic_insert"
       where t.id = theme_id and t.name = 'Generic'
     )
   );
+
+-- v3.0: a private, per-user "personal gallery" alongside the shared
+-- community canvas. personal_owner_id is null for every existing/community
+-- cell and set to the owner's id for a personal one — two separate infinite
+-- (x,y) planes sharing one table, so the rest of the app (grid rendering,
+-- add/view modals, collage, share page) can keep working the same way over
+-- either plane instead of needing a parallel implementation.
+alter table public.cells
+  add column personal_owner_id uuid references auth.users(id) on delete cascade;
+
+-- A plain unique(personal_owner_id, x, y) can't do this alone: Postgres
+-- treats every NULL as distinct from every other NULL in an ordinary unique
+-- index, so if personal_owner_id were just folded into the old constraint,
+-- two community rows (both null) could collide at the same (x,y). Two
+-- partial indexes instead: one shared plane for null-owner rows, one plane
+-- per non-null owner.
+alter table public.cells drop constraint cells_unique_coord;
+
+create unique index cells_unique_coord_community_idx
+  on public.cells (x, y)
+  where personal_owner_id is null;
+
+create unique index cells_unique_coord_personal_idx
+  on public.cells (personal_owner_id, x, y)
+  where personal_owner_id is not null;
+
+-- Community rows keep exactly today's visibility; a user's own personal
+-- rows are visible only to them — not even admins (see the admin-delete
+-- policies further down, which need the same plane restriction added or
+-- they'd still reach into personal cells despite this).
+alter policy "cells_select_public"
+  on public.cells
+  using (personal_owner_id is null);
+
+create policy "cells_select_own_personal"
+  on public.cells for select
+  to authenticated
+  using (personal_owner_id = auth.uid());
+
+-- Same insert rules as before (ownership, can_upload, the 5/day image cap —
+-- unchanged, and deliberately not exempting personal-gallery uploads or the
+-- "publish to community" copy from that shared cap), plus: the caller may
+-- only ever write to their own personal plane, never someone else's.
+alter policy "cells_insert_authenticated"
+  on public.cells
+  with check (
+    auth.uid() = created_by
+    and (personal_owner_id is null or personal_owner_id = auth.uid())
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.can_upload)
+    and (
+      cell_type <> 'image'
+      or public.is_admin()
+      or (
+        select count(*) from public.cells c
+        where c.created_by = auth.uid()
+          and c.cell_type = 'image'
+          and c.created_at >= greatest(
+            date_trunc('day', now()),
+            coalesce(
+              (select p.upload_limit_reset_at from public.profiles p where p.id = auth.uid()),
+              '-infinity'::timestamptz
+            )
+          )
+      ) < 5
+    )
+  );
+
+-- There was no "delete your own cell" policy at all before this (only
+-- admins could delete, and only community cells now that the policy below
+-- is scoped) — personal cells need one since admins have no access here.
+create policy "cells_delete_own_personal"
+  on public.cells for delete
+  to authenticated
+  using (personal_owner_id = auth.uid());
+
+-- Without this added condition, the pre-existing admin policy (previously
+-- no plane check at all) would still let admins delete personal cells even
+-- after the owner-delete policy above is added.
+alter policy "cells_delete_admin"
+  on public.cells
+  using (
+    personal_owner_id is null
+    and exists (select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email'))
+  );
+
+-- Storage needs the same split as the cells table above. deleteCell() in
+-- src/lib/cells.ts already best-effort-removes the image/thumbnail objects
+-- before deleting the row; without an owner-delete storage policy that
+-- would silently fail for a personal cell (row gone, blob orphaned
+-- forever), since only admins could delete storage objects before this.
+alter policy "cells_images_admin_delete"
+  on storage.objects
+  using (
+    bucket_id = 'cells-images'
+    and exists (select 1 from public.admins a where lower(a.email) = lower(auth.jwt() ->> 'email'))
+    and exists (
+      select 1 from public.cells c
+      where c.personal_owner_id is null
+        and (c.image_path = name or c.thumbnail_path = name)
+    )
+  );
+
+-- Joined back to cells (not just the folder-prefix check) deliberately: a
+-- user's *community* cell images live in that same per-user folder, and a
+-- broad "delete anything under my own folder" policy would let someone
+-- delete storage files backing a community cell they have no row-delete
+-- rights to.
+create policy "cells_images_own_personal_delete"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'cells-images'
+    and (storage.foldername(name))[1] = auth.uid()::text
+    and exists (
+      select 1 from public.cells c
+      where c.personal_owner_id = auth.uid()
+        and (c.image_path = name or c.thumbnail_path = name)
+    )
+  );
+
+-- Reactions previously had no restriction at all tying a reaction to a
+-- community cell — any authenticated user could already insert/update a
+-- cell_reactions row against any numeric cell_id (sequential, guessable),
+-- including a private personal one. Closing that here rather than relying
+-- on the UI simply never offering a reaction picker for personal cells.
+-- setMyReaction() upserts, so both the insert and update policy paths need
+-- this same check.
+alter policy "cell_reactions_own_insert"
+  on public.cell_reactions
+  with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.cells c where c.id = cell_id and c.personal_owner_id is null)
+  );
+
+alter policy "cell_reactions_own_update"
+  on public.cell_reactions
+  with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.cells c where c.id = cell_id and c.personal_owner_id is null)
+  );
+
+-- Lets an owner generate a public, no-login-required link to one personal
+-- theme's worth of sketches (mirrors the existing community /share page),
+-- without making personal cells generally browsable. Deliberately NOT
+-- keyed on the raw (owner_id, theme_id) pair the community share URL uses:
+-- theme_id is a small sequential int, so a link built that way would let
+-- anyone who obtains it enumerate every other theme the same owner has,
+-- with no way to revoke a leak short of deleting the actual sketches. The
+-- random share_token is both non-enumerable and revocable (delete the row,
+-- a fresh call to get_or_create_personal_share below issues a new one).
+create table public.personal_shares (
+  id          bigint generated always as identity primary key,
+  owner_id    uuid not null references auth.users(id) on delete cascade,
+  theme_id    bigint not null references public.themes(id) on delete cascade,
+  share_token uuid not null default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  unique (owner_id, theme_id)
+);
+alter table public.personal_shares enable row level security;
+
+create policy "personal_shares_own"
+  on public.personal_shares for all
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+-- Called by the "Share sketches page" action when in personal mode — same
+-- token if one already exists for this (owner, theme), otherwise a fresh
+-- one.
+create or replace function public.get_or_create_personal_share(p_theme_id bigint)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token uuid;
+begin
+  insert into public.personal_shares (owner_id, theme_id)
+  values (auth.uid(), p_theme_id)
+  on conflict (owner_id, theme_id) do nothing;
+
+  select share_token into v_token
+  from public.personal_shares
+  where owner_id = auth.uid() and theme_id = p_theme_id;
+
+  return v_token;
+end;
+$$;
+
+grant execute on function public.get_or_create_personal_share(bigint) to authenticated;
+
+-- Public-facing read backing /share/personal/[token] — resolves a token to
+-- its sketch list without ever exposing personal_shares rows or the raw
+-- (owner_id, theme_id) pair directly to the caller.
+create or replace function public.get_shareable_personal_sketches(p_share_token uuid)
+returns table (
+  id bigint,
+  image_path text,
+  thumbnail_path text,
+  image_width integer,
+  image_height integer,
+  created_at timestamptz,
+  theme_prompt_id bigint,
+  owner_id uuid,
+  theme_id bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- Left join, not inner: a valid token for a theme with zero sketches so
+  -- far must still return one row (owner_id/theme_id set, every cell.*
+  -- column null) so the page can tell "invalid token" (zero rows) apart
+  -- from "valid token, nothing uploaded yet" (one row, no cell fields) and
+  -- show its own empty state instead of a 404. The cell_type filter has to
+  -- live in the join condition rather than a where clause for the same
+  -- reason — a where clause would drop that placeholder row too.
+  select c.id, c.image_path, c.thumbnail_path, c.image_width, c.image_height,
+         c.created_at, c.theme_prompt_id, ps.owner_id, ps.theme_id
+  from public.personal_shares ps
+  left join public.cells c
+    on c.personal_owner_id = ps.owner_id
+    and c.theme_id = ps.theme_id
+    and c.cell_type = 'image'
+  where ps.share_token = p_share_token;
+$$;
+
+grant execute on function public.get_shareable_personal_sketches(uuid) to anon, authenticated;

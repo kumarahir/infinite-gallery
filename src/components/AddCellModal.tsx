@@ -11,6 +11,7 @@ import {
   fetchTodayImageUploadCount,
   insertImageCell,
   insertTextCell,
+  publishToCommunity,
   type CellRow,
   type Theme,
 } from "@/lib/cells";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/themePrompts";
 import CropAdjuster from "./CropAdjuster";
 import SignInPanel from "./SignInPanel";
+import type { GalleryMode } from "./GalleryModeToggle";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -74,6 +76,7 @@ export default function AddCellModal({
   y,
   user,
   isAdmin,
+  galleryMode,
   onClose,
   onCreated,
 }: {
@@ -81,8 +84,9 @@ export default function AddCellModal({
   y: number;
   user: User | null;
   isAdmin: boolean;
+  galleryMode: GalleryMode;
   onClose: () => void;
-  onCreated: (cell: CellRow, streak?: number) => void;
+  onCreated: (cell: CellRow, streak?: number, publishError?: string) => void;
 }) {
   const [tab, setTab] = useState<"image" | "text">("image");
 
@@ -126,6 +130,9 @@ export default function AddCellModal({
   // new prompt row for that theme on submit (see addGenericThemeKeywords),
   // not attached to this particular sketch.
   const [genericKeywords, setGenericKeywords] = useState("");
+  // Personal-gallery only: also places a copy of this sketch into the
+  // community gallery on submit (see publishToCommunity in cells.ts).
+  const [publishToCommunityChecked, setPublishToCommunityChecked] = useState(false);
 
   const defaultTheme = themes.find((t) => t.is_default) ?? null;
   const genericTheme = themes.find((t) => t.name === "Generic") ?? null;
@@ -308,7 +315,9 @@ export default function AddCellModal({
     // Uploads whichever version is currently toggled visible — the enhanced
     // result if the toggle is on and ready, otherwise the plain crop.
     const blobToUpload = enhanceOn && processedBlob ? processedBlob : croppedBlob;
-    if (!blobToUpload || !user || themeId == null) return;
+    // Theme is required in the community gallery, but "No theme" is a
+    // deliberate, valid choice in the personal one (see the Theme select).
+    if (!blobToUpload || !user || (galleryMode === "community" && themeId == null)) return;
     setBusy(true);
     setError(null);
     try {
@@ -331,6 +340,7 @@ export default function AddCellModal({
         await addGenericThemeKeywords(genericTheme.id, genericKeywords.split(",")).catch(() => {});
       }
       const { full, thumbnail } = await resizeImageWithThumbnail(blobToUpload);
+      const personalOwnerId = galleryMode === "personal" ? user.id : undefined;
       const cell = await insertImageCell({
         x,
         y,
@@ -341,9 +351,34 @@ export default function AddCellModal({
         userId: user.id,
         themeId,
         themePromptId: selectedThemePrompts.length > 0 ? selectedPromptId : null,
+        personalOwnerId,
       });
+
+      // Best-effort — doesn't undo the personal upload, which already
+      // succeeded — see publishToCommunity in cells.ts. Passed through to
+      // onCreated rather than shown inline here: onCreated immediately
+      // hands this cell to the parent grid, which swaps this modal out for
+      // ViewCellModal on the very next render, so any local state set
+      // afterward would never actually be seen.
+      let publishError: string | undefined;
+      if (personalOwnerId && publishToCommunityChecked && cell.image_path && cell.thumbnail_path) {
+        try {
+          await publishToCommunity({
+            imagePath: cell.image_path,
+            thumbnailPath: cell.thumbnail_path,
+            width: full.width,
+            height: full.height,
+            themeId,
+            themePromptId: selectedThemePrompts.length > 0 ? selectedPromptId : null,
+            userId: user.id,
+          });
+        } catch {
+          publishError = "Couldn't publish to the community gallery — try again from your personal gallery.";
+        }
+      }
+
       const streak = await fetchMyStreak(user.id).catch(() => undefined);
-      onCreated(cell, streak);
+      onCreated(cell, streak, publishError);
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
       // Deliberately no onClose() here — the parent grid now has this cell
       // in its cache, so it re-renders this same pendingCell coordinate as
@@ -372,7 +407,13 @@ export default function AddCellModal({
         setBusy(false);
         return;
       }
-      const cell = await insertTextCell(x, y, text.trim(), user.id);
+      const cell = await insertTextCell(
+        x,
+        y,
+        text.trim(),
+        user.id,
+        galleryMode === "personal" ? user.id : undefined
+      );
       onCreated(cell);
       onClose();
     } catch (err) {
@@ -525,9 +566,10 @@ export default function AddCellModal({
                     </span>
                     <select
                       value={themeId ?? ""}
-                      onChange={(e) => setThemeId(Number(e.target.value))}
+                      onChange={(e) => setThemeId(e.target.value ? Number(e.target.value) : null)}
                       className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
                     >
+                      {galleryMode === "personal" && <option value="">No theme</option>}
                       {themes.map((theme) => (
                         <option key={theme.id} value={theme.id}>
                           {theme.name}
@@ -535,6 +577,18 @@ export default function AddCellModal({
                       ))}
                     </select>
                   </label>
+
+                  {galleryMode === "personal" && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={publishToCommunityChecked}
+                        onChange={(e) => setPublishToCommunityChecked(e.target.checked)}
+                        className="rounded border-black/20 dark:border-white/30"
+                      />
+                      Also publish to community gallery
+                    </label>
+                  )}
 
                   {selectedThemePrompts.length > 0 && (
                     <label className="flex flex-col gap-1">
@@ -667,7 +721,7 @@ export default function AddCellModal({
                       !(enhanceOn && processedBlob ? processedBlob : croppedBlob) ||
                       enhancing ||
                       busy ||
-                      themeId == null
+                      (galleryMode === "community" && themeId == null)
                     }
                     className="rounded-lg bg-green-500 text-white text-sm font-medium py-2 disabled:opacity-40 hover:bg-green-600"
                   >
