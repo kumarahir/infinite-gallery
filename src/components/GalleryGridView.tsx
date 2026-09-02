@@ -57,7 +57,10 @@ export default function GalleryGridView({
       {sorted.length === 0 ? (
         <p className="p-6 text-sm text-black/50 dark:text-white/50">No sketches to show yet.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 p-4 max-w-3xl mx-auto">
+        <div
+          className="grid gap-3 p-4 max-w-6xl mx-auto"
+          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
+        >
           {sorted.map((cell) => {
             const promptText = promptTextFor(cell);
             const reaction = reactionSummaries.get(cell.id);
@@ -73,7 +76,7 @@ export default function GalleryGridView({
                     src={getPublicImageUrl(cell.thumbnail_path ?? cell.image_path ?? "")}
                     alt=""
                     fill
-                    sizes="(max-width: 640px) 50vw, 380px"
+                    sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 200px"
                     className="object-cover"
                   />
                   {reaction && (
