@@ -895,6 +895,25 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
     runPhysics();
   };
 
+  // Only meaningful in grid view — rendered in the same floating control
+  // row as the other filters (not inside GalleryGridView itself), since
+  // that row already sits below the fixed top-right auth button rather
+  // than colliding with it.
+  const sortSelect = gridViewOn && (
+    <label className="flex items-center gap-1.5 text-sm rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 pl-3 pr-2 py-1.5 text-black/70 dark:text-white/80">
+      <span className="text-xs opacity-70">Sort</span>
+      <select
+        value={gridSortBy}
+        onChange={(e) => setGridSortBy(e.target.value as GridSortBy)}
+        className="bg-transparent text-sm outline-none"
+      >
+        <option value="time">Newest first</option>
+        <option value="prompt">Prompt (A–Z)</option>
+        <option value="artist">Artist (A–Z)</option>
+      </select>
+    </label>
+  );
+
   return (
     <>
       <div
@@ -939,7 +958,6 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           themePrompts={gridThemePrompts}
           reactionSummaries={reactionSummaries}
           sortBy={gridSortBy}
-          onSortByChange={setGridSortBy}
           onSelectCell={setGridViewSelectedCell}
         />
       )}
@@ -1015,6 +1033,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
               <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
             )}
             <GridViewToggle active={gridViewOn} onToggle={() => setGridViewOn((v) => !v)} />
+            {sortSelect}
             {collageReady && (
               <button
                 type="button"
@@ -1172,6 +1191,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
           )}
           <GridViewToggle active={gridViewOn} onToggle={() => setGridViewOn((v) => !v)} />
+          {sortSelect}
           {collageReady && (
             <button
               type="button"

@@ -7,12 +7,6 @@ import { buildMultiThemePromptMaps, promptTextForCell, type MultiThemePromptRow 
 
 export type GridSortBy = "time" | "prompt" | "artist";
 
-const SORT_LABELS: Record<GridSortBy, string> = {
-  time: "Newest first",
-  prompt: "Prompt (A–Z)",
-  artist: "Artist (A–Z)",
-};
-
 // Newest-first for time (matches the rest of the app); alphabetical for
 // prompt/artist, with unprompted sketches pushed to the end for the prompt
 // sort rather than being scattered by their fallback "Day N" label — a
@@ -46,14 +40,12 @@ export default function GalleryGridView({
   themePrompts,
   reactionSummaries,
   sortBy,
-  onSortByChange,
   onSelectCell,
 }: {
   cells: CellRow[];
   themePrompts: MultiThemePromptRow[];
   reactionSummaries: Map<number, ReactionSummary>;
   sortBy: GridSortBy;
-  onSortByChange: (sortBy: GridSortBy) => void;
   onSelectCell: (cell: CellRow) => void;
 }) {
   const promptMaps = buildMultiThemePromptMaps(themePrompts);
@@ -61,22 +53,7 @@ export default function GalleryGridView({
   const sorted = sortCells(cells, sortBy, promptTextFor);
 
   return (
-    <div className="fixed inset-0 z-30 overflow-y-auto bg-background">
-      <div className="sticky top-0 z-10 flex items-center justify-end gap-2 bg-background/90 backdrop-blur border-b border-black/10 dark:border-white/15 px-4 py-3">
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-black/50 dark:text-white/50">Sort by</span>
-          <select
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as GridSortBy)}
-            className="rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-sm outline-none focus:border-black/30 dark:focus:border-white/40"
-          >
-            <option value="time">{SORT_LABELS.time}</option>
-            <option value="prompt">{SORT_LABELS.prompt}</option>
-            <option value="artist">{SORT_LABELS.artist}</option>
-          </select>
-        </label>
-      </div>
-
+    <div className="fixed inset-0 z-30 overflow-y-auto bg-background pt-4">
       {sorted.length === 0 ? (
         <p className="p-6 text-sm text-black/50 dark:text-white/50">No sketches to show yet.</p>
       ) : (
