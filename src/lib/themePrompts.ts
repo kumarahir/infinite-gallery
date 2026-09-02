@@ -97,13 +97,13 @@ export function parseThemePromptsText(raw: string): ParsedThemePrompt[] {
   return prompts.filter((p) => p.day_of_month >= 1 && p.day_of_month <= 31 && p.prompt_text);
 }
 
-export async function fetchThemePrompts(themeId: number): Promise<ThemePrompt[]> {
+// `themeId: null` fetches prompts across every theme — used by the grid
+// view's "sort by prompt" when no theme filter narrows things to one.
+export async function fetchThemePrompts(themeId: number | null): Promise<ThemePrompt[]> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from("theme_prompts")
-    .select("*")
-    .eq("theme_id", themeId)
-    .order("day_of_month");
+  let query = supabase.from("theme_prompts").select("*");
+  if (themeId != null) query = query.eq("theme_id", themeId);
+  const { data, error } = await query.order("day_of_month");
   if (error) throw error;
   return (data ?? []) as ThemePrompt[];
 }

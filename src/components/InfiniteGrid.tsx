@@ -11,6 +11,8 @@ import MinimapRadar, { type MinimapRadarHandle } from "./MinimapRadar";
 import FilterBar from "./FilterBar";
 import MineToggleButton from "./MineToggleButton";
 import GalleryModeToggle, { type GalleryMode } from "./GalleryModeToggle";
+import GridViewToggle from "./GridViewToggle";
+import GalleryGridView, { type GridSortBy } from "./GalleryGridView";
 import LandingOverlay from "./LandingOverlay";
 import MobileToolsDrawer from "./MobileToolsDrawer";
 import { useCellChunks } from "@/hooks/useCellChunks";
@@ -42,6 +44,7 @@ import {
 } from "@/lib/cells";
 import { buildCollage, collageFilename } from "@/lib/collage";
 import { getOrCreatePersonalShareToken } from "@/lib/personalShares";
+import { fetchThemePrompts, type ThemePrompt } from "@/lib/themePrompts";
 import {
   fetchAllReactionSummaries,
   fetchReactionBreakdownByCellIds,
@@ -125,6 +128,16 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   const [filteredCells, setFilteredCells] = useState<CellRow[]>([]);
   const filterActive = onlyMine || themeFilterId != null;
   const wasFilterActive = useRef(false);
+
+  // Plain vertical-scrolling 2-column grid, as an alternative to the
+  // pannable canvas — respects whatever Theme/Mine filter is currently
+  // active (or shows everything in the current gallery plane if neither is
+  // set), reusing the same `filteredCells` fetch as the clustered/filtered
+  // canvas mode above rather than a second data source.
+  const [gridViewOn, setGridViewOn] = useState(false);
+  const [gridSortBy, setGridSortBy] = useState<GridSortBy>("time");
+  const [gridThemePrompts, setGridThemePrompts] = useState<ThemePrompt[]>([]);
+  const [gridViewSelectedCell, setGridViewSelectedCell] = useState<CellRow | null>(null);
 
   // Which (x,y) plane is currently being browsed — the shared community
   // canvas, or this signed-in user's own private one. Always "community"
@@ -294,16 +307,32 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       });
   }, []);
 
-  // Re-fetch the clustered result set whenever the active filter changes.
+  // Re-fetch the clustered result set whenever the active filter changes —
+  // also feeds the grid view below, which (unlike the clustered canvas
+  // mode) wants a result even with no filter active at all, since "grid
+  // view" on its own means "show everything in this plane".
   useEffect(() => {
-    if (!filterActive) {
+    if (!filterActive && !gridViewOn) {
       setFilteredCells([]);
       return;
     }
     fetchFilteredCells({ onlyMine, themeId: themeFilterId }, user?.id, personalOwnerId)
       .then(setFilteredCells)
       .catch(() => setFilteredCells([]));
-  }, [filterActive, onlyMine, themeFilterId, user?.id, personalOwnerId]);
+  }, [filterActive, gridViewOn, onlyMine, themeFilterId, user?.id, personalOwnerId]);
+
+  // Prompts backing the grid view's "sort by prompt" — every theme's when
+  // no theme filter narrows things to one, since sketches from several
+  // themes can be shown together there.
+  useEffect(() => {
+    if (!gridViewOn) {
+      setGridThemePrompts([]);
+      return;
+    }
+    fetchThemePrompts(themeFilterId)
+      .then(setGridThemePrompts)
+      .catch(() => setGridThemePrompts([]));
+  }, [gridViewOn, themeFilterId]);
 
   // Collage download — needs a coherent scope: one person, one theme. In
   // community mode that means both onlyMine and themeFilterId set (onlyMine
@@ -871,7 +900,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
       <div
         ref={containerRef}
         className={`relative w-full h-full overflow-hidden touch-none select-none ${
-          isDragging ? "cursor-grabbing" : "cursor-grab"
+          gridViewOn ? "hidden" : isDragging ? "cursor-grabbing" : "cursor-grab"
         }`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -904,40 +933,55 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       </div>
 
+      {gridViewOn && (
+        <GalleryGridView
+          cells={filteredCells}
+          themePrompts={gridThemePrompts}
+          reactionSummaries={reactionSummaries}
+          sortBy={gridSortBy}
+          onSortByChange={setGridSortBy}
+          onSelectCell={setGridViewSelectedCell}
+        />
+      )}
+
       {isTouchPrimary && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-3">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleRecenter}
-              aria-label="Recenter gallery"
-              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-5 h-5"
-              >
-                <path d="M3 11.5 12 4l9 7.5" />
-                <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
-              </svg>
-            </button>
-            <div className="relative w-24 h-24 flex items-center justify-center">
-              {!filterActive && (
-                <div
-                  className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
-                  style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
+            {!gridViewOn && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleRecenter}
+                  aria-label="Recenter gallery"
+                  className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
                 >
-                  <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-5 h-5"
+                  >
+                    <path d="M3 11.5 12 4l9 7.5" />
+                    <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
+                  </svg>
+                </button>
+                <div className="relative w-24 h-24 flex items-center justify-center">
+                  {!filterActive && (
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-200"
+                      style={{ opacity: radarVisible ? 1 : 0, bottom: "calc(100% + 12px)" }}
+                    >
+                      <MinimapRadar ref={minimapRef} dots={dotCoords} currentUserId={user?.id} />
+                    </div>
+                  )}
+                  <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
                 </div>
-              )}
-              <Joystick onVector={handleJoystickVector} onActiveChange={setRadarVisible} />
-            </div>
+              </>
+            )}
             <button
               type="button"
               onClick={() => setToolsOpen((v) => !v)}
@@ -970,6 +1014,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
             {user && galleryMode === "community" && (
               <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
             )}
+            <GridViewToggle active={gridViewOn} onToggle={() => setGridViewOn((v) => !v)} />
             {collageReady && (
               <button
                 type="button"
@@ -1083,7 +1128,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         </div>
       )}
 
-      {!isTouchPrimary && !filterActive && (
+      {!isTouchPrimary && !filterActive && !gridViewOn && (
         <div
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 pointer-events-none transition-opacity duration-200"
           style={{ opacity: isDragging ? 1 : 0 }}
@@ -1094,26 +1139,28 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
 
       {!isTouchPrimary && (
         <div className="fixed bottom-8 left-8 z-40 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleRecenter}
-            aria-label="Recenter gallery"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-5 h-5"
+          {!gridViewOn && (
+            <button
+              type="button"
+              onClick={handleRecenter}
+              aria-label="Recenter gallery"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 text-black/70 dark:text-white/80"
             >
-              <path d="M3 11.5 12 4l9 7.5" />
-              <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-5 h-5"
+              >
+                <path d="M3 11.5 12 4l9 7.5" />
+                <path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
+              </svg>
+            </button>
+          )}
           <FilterBar themes={themes} themeId={themeFilterId} onThemeIdChange={setThemeFilterId} />
           {user && (
             <GalleryModeToggle
@@ -1124,6 +1171,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           {user && galleryMode === "community" && (
             <MineToggleButton active={onlyMine} onToggle={() => setOnlyMine((v) => !v)} />
           )}
+          <GridViewToggle active={gridViewOn} onToggle={() => setGridViewOn((v) => !v)} />
           {collageReady && (
             <button
               type="button"
@@ -1236,7 +1284,21 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
         }}
       />
 
-      {pendingCell && (() => {
+      {gridViewSelectedCell && (
+        <ViewCellModal
+          cell={gridViewSelectedCell}
+          user={user}
+          isAdmin={isAdmin}
+          onClose={() => setGridViewSelectedCell(null)}
+          onDeleted={(x, y) => {
+            handleCellDeleted(x, y);
+            setGridViewSelectedCell(null);
+          }}
+          onReactionChange={handleReactionSummaryChange}
+        />
+      )}
+
+      {!gridViewOn && pendingCell && (() => {
         const existing = getActiveCell(pendingCell.x, pendingCell.y);
         const closeModal = () => {
           setPendingCell(null);
