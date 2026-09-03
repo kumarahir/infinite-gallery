@@ -12,7 +12,11 @@ import FilterBar from "./FilterBar";
 import MineToggleButton from "./MineToggleButton";
 import GalleryModeToggle, { type GalleryMode } from "./GalleryModeToggle";
 import GridViewToggle from "./GridViewToggle";
-import GalleryGridView, { type GridSortBy } from "./GalleryGridView";
+import GalleryGridView, {
+  DEFAULT_SORT_DIR,
+  type GridSortBy,
+  type GridSortDir,
+} from "./GalleryGridView";
 import LandingOverlay from "./LandingOverlay";
 import MobileToolsDrawer from "./MobileToolsDrawer";
 import { useCellChunks } from "@/hooks/useCellChunks";
@@ -136,6 +140,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   // canvas mode above rather than a second data source.
   const [gridViewOn, setGridViewOn] = useState(false);
   const [gridSortBy, setGridSortBy] = useState<GridSortBy>("time");
+  const [gridSortDir, setGridSortDir] = useState<GridSortDir>(DEFAULT_SORT_DIR.time);
   const [gridThemePrompts, setGridThemePrompts] = useState<ThemePrompt[]>([]);
   const [gridViewSelectedCell, setGridViewSelectedCell] = useState<CellRow | null>(null);
 
@@ -899,19 +904,51 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
   // row as the other filters (not inside GalleryGridView itself), since
   // that row already sits below the fixed top-right auth button rather
   // than colliding with it.
+  // Tapping the already-active field flips its direction; tapping a
+  // different field switches to it at that field's own default direction
+  // (newest-first for time, A-Z for the alphabetical ones) rather than
+  // carrying over whatever direction was last used elsewhere.
+  const handleSortTap = useCallback(
+    (field: GridSortBy) => {
+      if (gridSortBy === field) {
+        setGridSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setGridSortBy(field);
+        setGridSortDir(DEFAULT_SORT_DIR[field]);
+      }
+    },
+    [gridSortBy]
+  );
+
   const sortSelect = gridViewOn && (
-    <label className="flex items-center gap-1.5 text-sm rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 pl-3 pr-2 py-1.5 text-black/70 dark:text-white/80">
-      <span className="text-xs opacity-70">Sort</span>
-      <select
-        value={gridSortBy}
-        onChange={(e) => setGridSortBy(e.target.value as GridSortBy)}
-        className="bg-transparent text-sm outline-none"
-      >
-        <option value="time">Newest first</option>
-        <option value="prompt">Prompt (A–Z)</option>
-        <option value="artist">Artist (A–Z)</option>
-      </select>
-    </label>
+    <div className="flex items-center gap-1 rounded-full bg-black/20 dark:bg-white/10 backdrop-blur border border-black/10 dark:border-white/20 p-1">
+      {(
+        [
+          { field: "time", label: "Time" },
+          { field: "prompt", label: "Prompt" },
+          { field: "artist", label: "Artist" },
+        ] as const
+      ).map(({ field, label }) => {
+        const active = gridSortBy === field;
+        return (
+          <button
+            key={field}
+            type="button"
+            onClick={() => handleSortTap(field)}
+            aria-pressed={active}
+            title={active ? `Sorted by ${label.toLowerCase()} — tap to reverse` : `Sort by ${label.toLowerCase()}`}
+            className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+              active
+                ? "bg-blue-500 text-white"
+                : "text-black/70 dark:text-white/80 hover:bg-black/10 dark:hover:bg-white/10"
+            }`}
+          >
+            {label}
+            {active && <span aria-hidden="true">{gridSortDir === "asc" ? "↑" : "↓"}</span>}
+          </button>
+        );
+      })}
+    </div>
   );
 
   return (
@@ -958,6 +995,7 @@ export default function InfiniteGrid({ initialUser }: { initialUser: User | null
           themePrompts={gridThemePrompts}
           reactionSummaries={reactionSummaries}
           sortBy={gridSortBy}
+          sortDir={gridSortDir}
           onSelectCell={setGridViewSelectedCell}
         />
       )}
